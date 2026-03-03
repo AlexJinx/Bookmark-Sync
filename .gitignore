@@ -1,0 +1,30 @@
+﻿# Node / package manager
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build and temp output
+dist/
+build/
+coverage/
+tmp/
+temp/
+
+# Store assets generated during publishing prep
+store-assets/
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Env / secrets
+.env
+.env.*
+!.env.example
