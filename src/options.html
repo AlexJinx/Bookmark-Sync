@@ -89,9 +89,20 @@
             </label>
             <label>
               自动推送间隔(分钟)
-              <input id="autoSyncIntervalMinutes" type="number" min="15" step="1" />
+              <input
+                id="autoSyncIntervalMinutes"
+                type="number"
+                min="15"
+                step="1"
+                aria-describedby="autoSyncIntervalHint"
+              />
+              <span id="autoSyncIntervalHint" class="field-note">最小 15 分钟，低于该值会自动调整为 15。</span>
             </label>
           </div>
+          <label class="switch switch-compact">
+            <input id="syncAllProviders" type="checkbox" />
+            同时同步所有已配置平台
+          </label>
         </section>
 
         <div class="actions">
@@ -104,7 +115,7 @@
             GitHub 令牌建议最少授予仓库内容读写权限（Fine-grained token 的 Contents: Read and write）。
           </p>
           <p id="lastSync" class="muted">最近同步: 无</p>
-          <p id="status" class="status"></p>
+          <p id="status" class="status hidden"></p>
         </section>
       </section>
     </main>

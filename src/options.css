@@ -313,9 +313,11 @@ select:focus {
 }
 
 .switch {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 9px;
+  width: fit-content;
+  justify-self: start;
   padding-top: 27px;
 }
 
@@ -324,6 +326,11 @@ select:focus {
   margin: 0;
   transform: scale(1.14);
   accent-color: #ec5b13;
+}
+
+.switch-compact {
+  padding-top: 0;
+  margin-bottom: 0;
 }
 
 .actions {
@@ -396,6 +403,10 @@ button:focus-visible {
   border: 1px solid var(--status-line);
   background: var(--status-bg);
   color: #6b3d22;
+}
+
+.status.hidden {
+  display: none;
 }
 
 @media (max-width: 760px) {

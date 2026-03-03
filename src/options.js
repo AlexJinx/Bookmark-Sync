@@ -7,7 +7,8 @@
   branch: document.getElementById("branch"),
   path: document.getElementById("path"),
   autoSyncEnabled: document.getElementById("autoSyncEnabled"),
-  autoSyncIntervalMinutes: document.getElementById("autoSyncIntervalMinutes")
+  autoSyncIntervalMinutes: document.getElementById("autoSyncIntervalMinutes"),
+  syncAllProviders: document.getElementById("syncAllProviders")
 };
 
 const providerUi = {
@@ -27,8 +28,16 @@ let activeProvider = fields.provider.value || "github";
 
 function setStatus(message, isError = false) {
   const status = document.getElementById("status");
-  status.textContent = message;
+  const text = typeof message === "string" ? message.trim() : String(message || "");
+  if (!text) {
+    status.textContent = "";
+    status.classList.add("hidden");
+    return;
+  }
+
+  status.textContent = text;
   status.style.color = isError ? "#b42318" : "#141a22";
+  status.classList.remove("hidden");
 }
 
 function formatTime(iso) {
@@ -48,6 +57,15 @@ function normalizeIntervalMinutes(value) {
     return 60;
   }
   return Math.max(15, parsed);
+}
+
+function normalizeIntervalInput() {
+  const before = fields.autoSyncIntervalMinutes.value;
+  const normalized = String(normalizeIntervalMinutes(before));
+  fields.autoSyncIntervalMinutes.value = normalized;
+  if (before && before !== normalized) {
+    setStatus("自动同步间隔最小为 15 分钟，已自动调整。");
+  }
 }
 
 async function sendMessage(action, extra = {}) {
@@ -92,7 +110,8 @@ function buildNextConfig(currentConfig) {
       ...scoped
     },
     autoSyncEnabled: fields.autoSyncEnabled.checked,
-    autoSyncIntervalMinutes: normalizeIntervalMinutes(fields.autoSyncIntervalMinutes.value)
+    autoSyncIntervalMinutes: normalizeIntervalMinutes(fields.autoSyncIntervalMinutes.value),
+    syncAllProviders: fields.syncAllProviders.checked
   };
 }
 
@@ -224,6 +243,7 @@ function render(config) {
   fields.path.value = scoped.path || "";
   fields.autoSyncEnabled.checked = Boolean(config.autoSyncEnabled);
   fields.autoSyncIntervalMinutes.value = String(normalizeIntervalMinutes(config.autoSyncIntervalMinutes));
+  fields.syncAllProviders.checked = Boolean(config.syncAllProviders);
   setTokenVisibility(false);
 
   activeProvider = provider;
@@ -266,6 +286,8 @@ async function switchProvider() {
 function bindEvents() {
   bindProviderSelect();
   fields.tokenVisibilityBtn.addEventListener("click", toggleTokenVisibility);
+  fields.autoSyncIntervalMinutes.addEventListener("change", normalizeIntervalInput);
+  fields.autoSyncIntervalMinutes.addEventListener("blur", normalizeIntervalInput);
   document.getElementById("saveBtn").addEventListener("click", () => run(save));
   document.getElementById("testBtn").addEventListener("click", () => run(testConnection));
   fields.provider.addEventListener("change", () => run(switchProvider));

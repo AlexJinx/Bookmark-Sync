@@ -19,7 +19,8 @@ export const DEFAULT_CONFIG = {
     path: "bookmarks/snapshot.json"
   },
   autoSyncEnabled: false,
-  autoSyncIntervalMinutes: 60
+  autoSyncIntervalMinutes: 60,
+  syncAllProviders: false
 };
 
 function deepMerge(base, patch) {

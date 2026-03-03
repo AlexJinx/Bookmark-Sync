@@ -29,8 +29,16 @@ function $(id) {
 
 function setStatus(message, isError = false) {
   const status = $("status");
-  status.textContent = message;
+  const text = typeof message === "string" ? message.trim() : String(message || "");
+  if (!text) {
+    status.textContent = "";
+    status.classList.add("hidden");
+    return;
+  }
+
+  status.textContent = text;
   status.style.color = isError ? "#b42318" : "#1a1e24";
+  status.classList.remove("hidden");
 }
 
 function setActionBusy(busy) {

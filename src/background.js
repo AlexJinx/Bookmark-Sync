@@ -6,6 +6,8 @@ import { buildDiffSummary } from "./snapshot-diff.js";
 
 const AUTO_SYNC_ALARM = "bookmarkAutoSync";
 const CONFLICT_CODE = "SYNC_CONFLICT";
+const PROVIDER_KEYS = ["github", "gitee"];
+const PROVIDER_REQUIRED_FIELDS = ["token", "owner", "repo", "branch", "path"];
 
 class SyncConflictError extends Error {
   constructor(message, details = {}) {
@@ -24,14 +26,44 @@ function getSyncScope(config) {
   return [config.provider, scoped.owner || "", scoped.repo || "", scoped.branch || "", scoped.path || ""].join("|");
 }
 
-function getScopedSyncState(config, syncState) {
-  if (!syncState) {
-    return null;
+function normalizeSyncStateStore(syncState) {
+  if (!syncState || typeof syncState !== "object") {
+    return { scopes: {} };
   }
-  if (syncState.scope !== getSyncScope(config)) {
-    return null;
+
+  if (typeof syncState.scope === "string") {
+    return {
+      scopes: {
+        [syncState.scope]: syncState
+      }
+    };
   }
-  return syncState;
+
+  if (!syncState.scopes || typeof syncState.scopes !== "object") {
+    return { scopes: {} };
+  }
+
+  return {
+    scopes: { ...syncState.scopes }
+  };
+}
+
+function getScopedSyncState(config, syncStateStore) {
+  const scope = getSyncScope(config);
+  return syncStateStore.scopes[scope] || null;
+}
+
+function setScopedSyncState(syncStateStore, nextSyncState) {
+  if (!nextSyncState?.scope) {
+    return syncStateStore;
+  }
+
+  return {
+    scopes: {
+      ...(syncStateStore?.scopes || {}),
+      [nextSyncState.scope]: nextSyncState
+    }
+  };
 }
 
 function makeSyncState(config, remoteSha, localHash) {
@@ -41,6 +73,29 @@ function makeSyncState(config, remoteSha, localHash) {
     localHash,
     updatedAt: new Date().toISOString()
   };
+}
+
+function withProvider(config, provider) {
+  return {
+    ...config,
+    provider
+  };
+}
+
+function isProviderConfigured(config, provider) {
+  const scoped = config[provider];
+  if (!scoped || typeof scoped !== "object") {
+    return false;
+  }
+
+  return PROVIDER_REQUIRED_FIELDS.every((key) => {
+    const value = scoped[key];
+    return typeof value === "string" && value.trim();
+  });
+}
+
+function getConfiguredProviders(config) {
+  return PROVIDER_KEYS.filter((provider) => isProviderConfigured(config, provider));
 }
 
 function hasRemoteChanged(syncState, remoteSha) {
@@ -228,12 +283,11 @@ function ensurePullNoConflict({ force, syncState, remote, localHash, remoteHash,
   }
 }
 
-async function pushToRemote({ force = false } = {}) {
-  const config = await getConfig();
+async function pushToRemoteForConfig(config, { force = false, local, syncStateStore } = {}) {
   const client = createProviderClient(config);
-
-  const [local, rawSyncState] = await Promise.all([getLocalSnapshotAndHash(), getSyncState()]);
-  const syncState = getScopedSyncState(config, rawSyncState);
+  const localSnapshot = local || (await getLocalSnapshotAndHash());
+  const scopedStateStore = syncStateStore || normalizeSyncStateStore(await getSyncState());
+  const syncState = getScopedSyncState(config, scopedStateStore);
 
   const remote = await client.getRemoteFile();
   let remoteHash = null;
@@ -247,44 +301,86 @@ async function pushToRemote({ force = false } = {}) {
     force,
     syncState,
     remote,
-    localHash: local.localHash,
+    localHash: localSnapshot.localHash,
     remoteHash,
-    localSnapshot: local.snapshot,
+    localSnapshot: localSnapshot.snapshot,
     remoteSnapshot
   });
 
-  if (remote.exists && remoteHash === local.localHash) {
-    const nextSyncState = makeSyncState(config, remote.sha, local.localHash);
-    await saveSyncState(nextSyncState);
+  if (remote.exists && remoteHash === localSnapshot.localHash) {
+    return {
+      lastSync: {
+        at: new Date().toISOString(),
+        direction: "push",
+        provider: config.provider,
+        fileSha: remote.sha,
+        commitSha: "",
+        noop: true
+      },
+      nextSyncState: makeSyncState(config, remote.sha, localSnapshot.localHash)
+    };
+  }
 
-    const lastSync = {
+  const payload = JSON.stringify(localSnapshot.snapshot, null, 2);
+  const result = await client.updateRemoteFile(payload, remote.sha);
+
+  return {
+    lastSync: {
       at: new Date().toISOString(),
       direction: "push",
       provider: config.provider,
-      fileSha: remote.sha,
-      commitSha: "",
-      noop: true
-    };
-    await saveLastSync(lastSync);
-    return lastSync;
-  }
+      fileSha: result.fileSha,
+      commitSha: result.commitSha,
+      force: Boolean(force)
+    },
+    nextSyncState: makeSyncState(config, result.fileSha, localSnapshot.localHash)
+  };
+}
 
-  const payload = JSON.stringify(local.snapshot, null, 2);
-  const result = await client.updateRemoteFile(payload, remote.sha);
-
-  const nextSyncState = makeSyncState(config, result.fileSha, local.localHash);
-  await saveSyncState(nextSyncState);
-
-  const lastSync = {
+function buildMultiProviderLastSync(results, force) {
+  const providers = results.map((item) => item.lastSync.provider);
+  return {
     at: new Date().toISOString(),
     direction: "push",
-    provider: config.provider,
-    fileSha: result.fileSha,
-    commitSha: result.commitSha,
-    force: Boolean(force)
+    provider: providers.join(","),
+    providers,
+    noop: results.every((item) => Boolean(item.lastSync.noop)),
+    force: Boolean(force),
+    syncAllProviders: true,
+    items: results.map((item) => item.lastSync)
   };
-  await saveLastSync(lastSync);
+}
 
+async function pushToRemote({ force = false } = {}) {
+  const config = await getConfig();
+  const [local, rawSyncState] = await Promise.all([getLocalSnapshotAndHash(), getSyncState()]);
+  const syncStateStore = normalizeSyncStateStore(rawSyncState);
+
+  if (!config.syncAllProviders) {
+    const result = await pushToRemoteForConfig(config, { force, local, syncStateStore });
+    const nextSyncStateStore = setScopedSyncState(syncStateStore, result.nextSyncState);
+    await saveSyncState(nextSyncStateStore);
+    await saveLastSync(result.lastSync);
+    return result.lastSync;
+  }
+
+  const providers = getConfiguredProviders(config);
+  if (providers.length === 0) {
+    throw new Error("未找到已配置的平台，请先在设置中完善至少一个平台配置");
+  }
+
+  const results = await Promise.all(
+    providers.map((provider) => pushToRemoteForConfig(withProvider(config, provider), { force, local, syncStateStore }))
+  );
+
+  let nextSyncStateStore = syncStateStore;
+  for (const result of results) {
+    nextSyncStateStore = setScopedSyncState(nextSyncStateStore, result.nextSyncState);
+  }
+  await saveSyncState(nextSyncStateStore);
+
+  const lastSync = buildMultiProviderLastSync(results, force);
+  await saveLastSync(lastSync);
   return lastSync;
 }
 
@@ -296,7 +392,8 @@ async function pullFromRemote({ force = false } = {}) {
   const { snapshot: remoteSnapshot, remoteHash } = await getRemoteSnapshotAndHash(remote);
 
   const [local, rawSyncState] = await Promise.all([getLocalSnapshotAndHash(), getSyncState()]);
-  const syncState = getScopedSyncState(config, rawSyncState);
+  const syncStateStore = normalizeSyncStateStore(rawSyncState);
+  const syncState = getScopedSyncState(config, syncStateStore);
 
   ensurePullNoConflict({
     force,
@@ -313,7 +410,7 @@ async function pullFromRemote({ force = false } = {}) {
   }
 
   const nextSyncState = makeSyncState(config, remote.sha, remoteHash);
-  await saveSyncState(nextSyncState);
+  await saveSyncState(setScopedSyncState(syncStateStore, nextSyncState));
 
   const lastSync = {
     at: new Date().toISOString(),
