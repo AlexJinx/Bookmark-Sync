@@ -7,8 +7,7 @@
   branch: document.getElementById("branch"),
   path: document.getElementById("path"),
   autoSyncEnabled: document.getElementById("autoSyncEnabled"),
-  autoSyncIntervalMinutes: document.getElementById("autoSyncIntervalMinutes"),
-  syncAllProviders: document.getElementById("syncAllProviders")
+  autoSyncIntervalMinutes: document.getElementById("autoSyncIntervalMinutes")
 };
 
 const providerUi = {
@@ -110,8 +109,7 @@ function buildNextConfig(currentConfig) {
       ...scoped
     },
     autoSyncEnabled: fields.autoSyncEnabled.checked,
-    autoSyncIntervalMinutes: normalizeIntervalMinutes(fields.autoSyncIntervalMinutes.value),
-    syncAllProviders: fields.syncAllProviders.checked
+    autoSyncIntervalMinutes: normalizeIntervalMinutes(fields.autoSyncIntervalMinutes.value)
   };
 }
 
@@ -243,7 +241,6 @@ function render(config) {
   fields.path.value = scoped.path || "";
   fields.autoSyncEnabled.checked = Boolean(config.autoSyncEnabled);
   fields.autoSyncIntervalMinutes.value = String(normalizeIntervalMinutes(config.autoSyncIntervalMinutes));
-  fields.syncAllProviders.checked = Boolean(config.syncAllProviders);
   setTokenVisibility(false);
 
   activeProvider = provider;

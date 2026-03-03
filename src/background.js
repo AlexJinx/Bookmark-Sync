@@ -351,12 +351,30 @@ function buildMultiProviderLastSync(results, force) {
   };
 }
 
-async function pushToRemote({ force = false } = {}) {
+async function pushToRemote({ force = false, provider = "", syncAllProviders = null } = {}) {
   const config = await getConfig();
   const [local, rawSyncState] = await Promise.all([getLocalSnapshotAndHash(), getSyncState()]);
   const syncStateStore = normalizeSyncStateStore(rawSyncState);
+  const selectedProvider = typeof provider === "string" ? provider.trim() : "";
+  const hasSyncAllOverride = typeof syncAllProviders === "boolean";
+  const shouldSyncAllProviders = hasSyncAllOverride ? syncAllProviders : Boolean(config.syncAllProviders);
 
-  if (!config.syncAllProviders) {
+  if (selectedProvider) {
+    if (!PROVIDER_KEYS.includes(selectedProvider)) {
+      throw new Error(`未知 provider: ${selectedProvider}`);
+    }
+    if (!isProviderConfigured(config, selectedProvider)) {
+      throw new Error(`平台未完成配置: ${selectedProvider}`);
+    }
+
+    const result = await pushToRemoteForConfig(withProvider(config, selectedProvider), { force, local, syncStateStore });
+    const nextSyncStateStore = setScopedSyncState(syncStateStore, result.nextSyncState);
+    await saveSyncState(nextSyncStateStore);
+    await saveLastSync(result.lastSync);
+    return result.lastSync;
+  }
+
+  if (!shouldSyncAllProviders) {
     const result = await pushToRemoteForConfig(config, { force, local, syncStateStore });
     const nextSyncStateStore = setScopedSyncState(syncStateStore, result.nextSyncState);
     await saveSyncState(nextSyncStateStore);
@@ -384,16 +402,29 @@ async function pushToRemote({ force = false } = {}) {
   return lastSync;
 }
 
-async function pullFromRemote({ force = false } = {}) {
+async function pullFromRemote({ force = false, provider = "" } = {}) {
   const config = await getConfig();
-  const client = createProviderClient(config);
+  const selectedProvider = typeof provider === "string" ? provider.trim() : "";
+  let workingConfig = config;
+
+  if (selectedProvider) {
+    if (!PROVIDER_KEYS.includes(selectedProvider)) {
+      throw new Error(`未知 provider: ${selectedProvider}`);
+    }
+    if (!isProviderConfigured(config, selectedProvider)) {
+      throw new Error(`平台未完成配置: ${selectedProvider}`);
+    }
+    workingConfig = withProvider(config, selectedProvider);
+  }
+
+  const client = createProviderClient(workingConfig);
 
   const remote = await client.getRemoteFile();
   const { snapshot: remoteSnapshot, remoteHash } = await getRemoteSnapshotAndHash(remote);
 
   const [local, rawSyncState] = await Promise.all([getLocalSnapshotAndHash(), getSyncState()]);
   const syncStateStore = normalizeSyncStateStore(rawSyncState);
-  const syncState = getScopedSyncState(config, syncStateStore);
+  const syncState = getScopedSyncState(workingConfig, syncStateStore);
 
   ensurePullNoConflict({
     force,
@@ -409,13 +440,13 @@ async function pullFromRemote({ force = false } = {}) {
     await importSnapshot(remoteSnapshot);
   }
 
-  const nextSyncState = makeSyncState(config, remote.sha, remoteHash);
+  const nextSyncState = makeSyncState(workingConfig, remote.sha, remoteHash);
   await saveSyncState(setScopedSyncState(syncStateStore, nextSyncState));
 
   const lastSync = {
     at: new Date().toISOString(),
     direction: "pull",
-    provider: config.provider,
+    provider: workingConfig.provider,
     fileSha: remote.sha,
     noop: remoteHash === local.localHash,
     force: Boolean(force)
@@ -446,9 +477,16 @@ async function handleMessage(message) {
     case "importLocal":
       return importSnapshot(message.snapshot);
     case "pushToRemote":
-      return pushToRemote({ force: Boolean(message.force) });
+      return pushToRemote({
+        force: Boolean(message.force),
+        provider: typeof message.provider === "string" ? message.provider : "",
+        syncAllProviders: typeof message.syncAllProviders === "boolean" ? message.syncAllProviders : null
+      });
     case "pullFromRemote":
-      return pullFromRemote({ force: Boolean(message.force) });
+      return pullFromRemote({
+        force: Boolean(message.force),
+        provider: typeof message.provider === "string" ? message.provider : ""
+      });
     default:
       throw new Error("未知 action");
   }

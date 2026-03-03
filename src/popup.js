@@ -1,4 +1,4 @@
-﻿class ActionError extends Error {
+class ActionError extends Error {
   constructor(payload) {
     if (typeof payload === "string") {
       super(payload || "请求失败");
@@ -13,7 +13,16 @@
   }
 }
 
+const PROVIDER_LABELS = {
+  github: "GitHub",
+  gitee: "Gitee"
+};
+const PROVIDER_REQUIRED_FIELDS = ["token", "owner", "repo", "branch", "path"];
+const NO_PROVIDER_MESSAGE = "未检测到已配置平台，请先打开设置完成平台配置。";
+
 let isRunning = false;
+let availableProviders = [];
+let currentConfig = null;
 
 async function sendMessage(action, extra = {}) {
   const response = await chrome.runtime.sendMessage({ action, ...extra });
@@ -41,11 +50,42 @@ function setStatus(message, isError = false) {
   status.classList.remove("hidden");
 }
 
+function isPushAllMode() {
+  return Boolean($("pushTargetAll")?.checked);
+}
+
 function setActionBusy(busy) {
-  for (const id of ["pushBtn", "pullBtn", "exportBtn", "importBtn"]) {
+  for (const id of ["exportBtn", "importBtn"]) {
     const element = $(id);
     if (element) {
       element.disabled = busy;
+    }
+  }
+
+  const pushBtn = $("pushBtn");
+  if (pushBtn) {
+    pushBtn.disabled = busy || availableProviders.length === 0;
+  }
+
+  const pullBtn = $("pullBtn");
+  if (pullBtn) {
+    pullBtn.disabled = busy || availableProviders.length === 0;
+  }
+
+  const pullProvider = $("pullProvider");
+  if (pullProvider) {
+    pullProvider.disabled = busy || availableProviders.length <= 1;
+  }
+
+  const pushProvider = $("pushProvider");
+  if (pushProvider) {
+    pushProvider.disabled = busy || availableProviders.length <= 1 || isPushAllMode();
+  }
+
+  for (const id of ["pushTargetCurrent", "pushTargetAll"]) {
+    const radio = $(id);
+    if (radio) {
+      radio.disabled = busy || availableProviders.length <= 1;
     }
   }
 
@@ -53,6 +93,122 @@ function setActionBusy(busy) {
   if (importInput) {
     importInput.disabled = busy;
   }
+}
+
+function isProviderConfigured(config, provider) {
+  const scoped = config?.[provider];
+  if (!scoped || typeof scoped !== "object") {
+    return false;
+  }
+
+  return PROVIDER_REQUIRED_FIELDS.every((field) => {
+    const value = scoped[field];
+    return typeof value === "string" && value.trim();
+  });
+}
+
+function getConfiguredProviders(config) {
+  return Object.keys(PROVIDER_LABELS).filter((provider) => isProviderConfigured(config, provider));
+}
+
+function renderProviderOptions({ selectId, preferredProvider = "", emptyLabel = "无已配置平台" }) {
+  const select = $(selectId);
+  if (!select) {
+    return "";
+  }
+
+  select.textContent = "";
+
+  if (availableProviders.length === 0) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = emptyLabel;
+    select.appendChild(option);
+    return "";
+  }
+
+  for (const provider of availableProviders) {
+    const option = document.createElement("option");
+    option.value = provider;
+    option.textContent = PROVIDER_LABELS[provider] || provider;
+    select.appendChild(option);
+  }
+
+  const defaultProvider = availableProviders.includes(preferredProvider) ? preferredProvider : availableProviders[0];
+  select.value = defaultProvider;
+  return defaultProvider;
+}
+
+function setPushTargetFromConfig(syncAllProviders) {
+  const syncAll = Boolean(syncAllProviders);
+  $("pushTargetAll").checked = syncAll;
+  $("pushTargetCurrent").checked = !syncAll;
+}
+
+function syncPushModeUi() {
+  const pushAll = isPushAllMode();
+  $("pushProviderField")?.classList.toggle("hidden", pushAll);
+
+  const pushBtn = $("pushBtn");
+  if (pushBtn) {
+    pushBtn.textContent = pushAll ? "推送到全部平台" : "推送本地到云端";
+  }
+
+  setActionBusy(isRunning);
+}
+
+function renderSyncControls(config) {
+  currentConfig = config;
+  availableProviders = getConfiguredProviders(config);
+
+  const preferredPull = $("pullProvider")?.value || config.provider || "";
+  const preferredPush = $("pushProvider")?.value || config.provider || "";
+
+  renderProviderOptions({ selectId: "pullProvider", preferredProvider: preferredPull });
+  renderProviderOptions({ selectId: "pushProvider", preferredProvider: preferredPush });
+
+  setPushTargetFromConfig(config.syncAllProviders);
+  syncPushModeUi();
+
+  if (availableProviders.length === 0) {
+    setStatus(NO_PROVIDER_MESSAGE, true);
+    return;
+  }
+
+  const currentStatus = $("status")?.textContent?.trim() || "";
+  if (currentStatus === NO_PROVIDER_MESSAGE) {
+    setStatus("");
+  }
+}
+
+async function loadSyncControls() {
+  const config = await sendMessage("getConfig");
+  renderSyncControls(config);
+}
+
+function getSelectedProvider(selectId) {
+  const selected = $(selectId)?.value || "";
+  if (availableProviders.includes(selected)) {
+    return selected;
+  }
+  return availableProviders[0] || "";
+}
+
+async function persistPushTargetMode() {
+  const nextSyncAll = isPushAllMode();
+  const latestConfig = await sendMessage("getConfig");
+  currentConfig = latestConfig;
+
+  if (Boolean(latestConfig.syncAllProviders) === nextSyncAll) {
+    return;
+  }
+
+  const nextConfig = {
+    ...latestConfig,
+    syncAllProviders: nextSyncAll
+  };
+  const saved = await sendMessage("saveConfig", { config: nextConfig });
+  currentConfig = saved;
 }
 
 function clearConflictPreview() {
@@ -172,11 +328,34 @@ function buildConflictMessage(error, suffix) {
 }
 
 async function onPush() {
+  if (availableProviders.length === 0) {
+    throw new Error(NO_PROVIDER_MESSAGE);
+  }
+
+  const pushAll = isPushAllMode();
+  const provider = getSelectedProvider("pushProvider");
+  if (!pushAll && !provider) {
+    throw new Error("未找到可用推送平台，请先在设置完成至少一个平台配置");
+  }
+
+  await persistPushTargetMode();
+
   clearConflictPreview();
-  setStatus("正在推送...");
+  if (pushAll) {
+    setStatus("正在推送到所有已配置平台...");
+  } else {
+    setStatus(`正在推送到 ${PROVIDER_LABELS[provider] || provider}...`);
+  }
+
+  const payload = pushAll ? { syncAllProviders: true } : { provider, syncAllProviders: false };
+
   try {
-    const result = await sendMessage("pushToRemote");
-    setStatus(result?.noop ? "已同步，无需推送" : "推送完成");
+    const result = await sendMessage("pushToRemote", payload);
+    if (pushAll) {
+      setStatus(result?.noop ? "所有平台均已同步，无需推送" : "已推送到所有已配置平台");
+    } else {
+      setStatus(result?.noop ? "已同步，无需推送" : "推送完成");
+    }
     await refreshLastSync();
   } catch (error) {
     if (!isConflictError(error)) {
@@ -190,19 +369,36 @@ async function onPush() {
       return;
     }
 
-    setStatus("正在强制推送...");
-    const result = await sendMessage("pushToRemote", { force: true });
+    setStatus(pushAll ? "正在强制推送到所有平台..." : "正在强制推送...");
+    const result = await sendMessage("pushToRemote", {
+      ...payload,
+      force: true
+    });
     clearConflictPreview();
-    setStatus(result?.noop ? "已同步，无需推送" : "强制推送完成");
+
+    if (pushAll) {
+      setStatus(result?.noop ? "所有平台均已同步，无需推送" : "强制推送到所有平台完成");
+    } else {
+      setStatus(result?.noop ? "已同步，无需推送" : "强制推送完成");
+    }
     await refreshLastSync();
   }
 }
 
 async function onPull() {
+  if (availableProviders.length === 0) {
+    throw new Error(NO_PROVIDER_MESSAGE);
+  }
+
+  const provider = getSelectedProvider("pullProvider");
+  if (!provider) {
+    throw new Error("未找到可用拉取平台，请先在设置完成至少一个平台配置");
+  }
+
   clearConflictPreview();
-  setStatus("正在拉取并导入...");
+  setStatus(`正在从 ${PROVIDER_LABELS[provider] || provider} 拉取并导入...`);
   try {
-    const result = await sendMessage("pullFromRemote");
+    const result = await sendMessage("pullFromRemote", { provider });
     setStatus(result?.noop ? "已是最新，无需覆盖" : "拉取并导入完成");
     await refreshLastSync();
   } catch (error) {
@@ -218,7 +414,7 @@ async function onPull() {
     }
 
     setStatus("正在强制拉取...");
-    const result = await sendMessage("pullFromRemote", { force: true });
+    const result = await sendMessage("pullFromRemote", { force: true, provider });
     clearConflictPreview();
     setStatus(result?.noop ? "已是最新，无需覆盖" : "强制拉取完成");
     await refreshLastSync();
@@ -261,6 +457,14 @@ async function onImportFile(event) {
   setStatus("导入完成");
 }
 
+function onPushTargetChanged() {
+  syncPushModeUi();
+  run(async () => {
+    await persistPushTargetMode();
+    setStatus("推送目标已保存");
+  });
+}
+
 function bindEvents() {
   $("pushBtn").addEventListener("click", () => run(onPush));
   $("pullBtn").addEventListener("click", () => run(onPull));
@@ -268,6 +472,8 @@ function bindEvents() {
   $("importBtn").addEventListener("click", onImportClick);
   $("importInput").addEventListener("change", (event) => run(() => onImportFile(event)));
   $("optionsBtn").addEventListener("click", () => chrome.runtime.openOptionsPage());
+  $("pushTargetCurrent").addEventListener("change", onPushTargetChanged);
+  $("pushTargetAll").addEventListener("change", onPushTargetChanged);
 }
 
 async function run(fn) {
@@ -291,7 +497,9 @@ async function run(fn) {
 async function init() {
   bindEvents();
   clearConflictPreview();
-  await run(refreshLastSync);
+  await run(async () => {
+    await Promise.all([loadSyncControls(), refreshLastSync()]);
+  });
 }
 
 init();

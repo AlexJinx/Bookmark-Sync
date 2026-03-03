@@ -14,12 +14,41 @@
           <h1>书签同步</h1>
           <p>私有仓库 · 安全可控</p>
         </div>
+        <button id="optionsBtn" class="setting-btn icon-btn hero-settings" aria-label="打开设置" title="打开设置">
+          <span class="visually-hidden">打开设置</span>
+          <svg class="settings-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M12 8.5a3.5 3.5 0 1 0 0 7a3.5 3.5 0 0 0 0-7z" />
+            <path d="M19.4 13.2a7.8 7.8 0 0 0 .1-1.2a7.8 7.8 0 0 0-.1-1.2l2-1.5l-1.9-3.3l-2.4 1a8 8 0 0 0-2.1-1.2l-.4-2.6h-3.8l-.4 2.6a8 8 0 0 0-2.1 1.2l-2.4-1l-1.9 3.3l2 1.5A7.8 7.8 0 0 0 4.5 12c0 .4 0 .8.1 1.2l-2 1.5l1.9 3.3l2.4-1a8 8 0 0 0 2.1 1.2l.4 2.6h3.8l.4-2.6a8 8 0 0 0 2.1-1.2l2.4 1l1.9-3.3l-2-1.5z" />
+          </svg>
+        </button>
       </header>
 
       <p id="lastSync" class="last">最近同步: 无</p>
 
       <section class="section">
         <p class="section-title">同步操作</p>
+        <label class="provider-field">
+          拉取平台
+          <select id="pullProvider"></select>
+        </label>
+        <label id="pushProviderField" class="provider-field">
+          推送平台
+          <select id="pushProvider"></select>
+        </label>
+        <div class="target-field">
+          <p class="target-title">推送目标</p>
+          <div class="target-options">
+            <label class="target-option">
+              <input id="pushTargetCurrent" type="radio" name="pushTarget" value="current" />
+              当前平台
+            </label>
+            <label class="target-option">
+              <input id="pushTargetAll" type="radio" name="pushTarget" value="all" />
+              全部已配置平台
+            </label>
+          </div>
+          <p class="target-hint">自动同步也会使用该推送目标。</p>
+        </div>
         <div class="actions">
           <button id="pushBtn" class="main">推送本地到云端</button>
           <button id="pullBtn" class="danger">拉取云端覆盖本地</button>
@@ -35,10 +64,6 @@
       </section>
 
       <input id="importInput" type="file" accept="application/json" hidden />
-
-      <div class="settings">
-        <button id="optionsBtn" class="setting-btn">打开设置</button>
-      </div>
 
       <pre id="conflictPreview" class="conflict hidden"></pre>
       <p id="status" class="status hidden"></p>

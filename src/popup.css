@@ -25,8 +25,10 @@
   box-sizing: border-box;
 }
 
+html,
 body {
   margin: 0;
+  overflow: hidden;
   background:
     radial-gradient(120% 90% at -10% -20%, #ffd3b6 0%, transparent 60%),
     radial-gradient(120% 80% at 120% 0%, #ffebdb 0%, transparent 58%),
@@ -34,8 +36,8 @@ body {
 }
 
 .panel {
-  width: 372px;
-  padding: 14px;
+  width: 364px;
+  padding: 12px;
   color: var(--text);
   border: 1px solid var(--panel-border);
   border-radius: 0;
@@ -47,9 +49,13 @@ body {
 
 .hero {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
+}
+
+.hero-text {
+  flex: 1 1 auto;
 }
 
 .mark {
@@ -79,7 +85,7 @@ body {
 }
 
 .last {
-  margin: 0 0 12px;
+  margin: 0 0 10px;
   padding: 8px 10px;
   border-radius: 10px;
   border: 1px solid var(--line);
@@ -89,7 +95,80 @@ body {
 }
 
 .section {
-  margin-bottom: 10px;
+  margin-bottom: 8px;
+}
+
+.provider-field {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #6b4a3c;
+}
+
+.provider-field select {
+  width: 100%;
+  border: 1px solid var(--ghost-line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: #3f2a1f;
+  background: #fffdfb;
+}
+
+.provider-field select:focus {
+  outline: none;
+  border-color: #ec5b13;
+  box-shadow: 0 0 0 3px rgba(236, 91, 19, 0.18);
+}
+
+.provider-field select:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.target-field {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 6px;
+  padding: 7px 9px;
+  border: 1px solid var(--ghost-line);
+  border-radius: 10px;
+  background: #fffdfb;
+}
+
+.target-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #6b4a3c;
+}
+
+.target-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.target-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #4c3226;
+}
+
+.target-option input {
+  margin: 0;
+  accent-color: #ec5b13;
+}
+
+.target-hint {
+  margin: 0;
+  font-size: 11px;
+  color: #8a6655;
 }
 
 .section-title {
@@ -102,16 +181,15 @@ body {
 }
 
 .actions,
-.tools,
-.settings {
+.tools {
   display: grid;
-  gap: 8px;
+  gap: 7px;
 }
 
 button {
   border: 0;
   border-radius: 10px;
-  padding: 11px 12px;
+  padding: 10px 12px;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
@@ -137,9 +215,76 @@ button.ghost {
 }
 
 button.setting-btn {
-  color: #ffffff;
-  background: linear-gradient(138deg, var(--setting-a), var(--setting-b));
-  box-shadow: 0 9px 16px rgba(39, 23, 16, 0.25);
+  color: #8f5f45;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid #e8d3c2;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 6px 12px rgba(95, 54, 31, 0.12);
+  backdrop-filter: blur(4px);
+}
+
+button.setting-btn.icon-btn {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  max-width: 32px;
+  max-height: 32px;
+  padding: 0;
+  border-radius: 999px;
+  aspect-ratio: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 32px;
+  font-size: 0;
+  line-height: 1;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.hero-settings {
+  margin-left: auto;
+  margin-top: 4px;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  max-width: 32px;
+  max-height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  flex: 0 0 32px;
+}
+
+.settings-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: #a05a33;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform-origin: center;
+  transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1), stroke 160ms ease;
+}
+
+.hero-settings:hover {
+  border-color: #d9b79f;
+  background: #fffdfb;
+  transform: none;
+  filter: none;
+}
+
+.hero-settings:hover .settings-icon {
+  transform: rotate(270deg);
+  stroke: #c84a10;
+}
+
+.hero-settings:active {
+  transform: none;
+  filter: none;
 }
 
 button:hover {
@@ -186,6 +331,18 @@ button:focus-visible {
 
 .hidden {
   display: none;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 @keyframes popup-in {
