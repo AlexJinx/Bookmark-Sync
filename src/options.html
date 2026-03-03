@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>书签同步设置</title>
+    <link rel="stylesheet" href="./options.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="panel">
+        <header class="hero">
+          <div class="hero-title">
+            <h1>书签同步设置</h1>
+            <p>先连接仓库，再在弹窗里执行推送/拉取与备份。</p>
+          </div>
+          <div class="hero-tag">Repo Mode</div>
+        </header>
+
+        <section class="group">
+          <h2>仓库连接</h2>
+          <p class="group-desc">选择提供方并填写仓库定位信息。</p>
+
+          <label class="field-provider">
+            同步提供方
+            <select id="provider" class="native-provider">
+              <option value="github">GitHub</option>
+              <option value="gitee">Gitee</option>
+            </select>
+            <div id="providerSelect" class="provider-select" data-open="false">
+              <button id="providerTrigger" type="button" class="provider-trigger" aria-haspopup="listbox" aria-expanded="false">
+                <span id="providerLabel">GitHub</span>
+                <span class="provider-caret" aria-hidden="true"></span>
+              </button>
+              <div id="providerMenu" class="provider-menu" role="listbox" aria-label="同步提供方">
+                <button type="button" class="provider-option" data-value="github" role="option">GitHub</button>
+                <button type="button" class="provider-option" data-value="gitee" role="option">Gitee</button>
+              </div>
+            </div>
+            <span class="field-note">可随时切换 GitHub / Gitee，下面仓库配置按当前提供方保存。</span>
+          </label>
+
+          <div class="grid two">
+            <label class="token-field">
+              Token
+              <div class="token-input-wrap">
+                <input id="token" type="password" placeholder="访问令牌" />
+                <button
+                  id="tokenVisibilityBtn"
+                  class="token-visibility-btn"
+                  type="button"
+                  aria-label="显示令牌"
+                  aria-pressed="false"
+                >
+                  显示
+                </button>
+              </div>
+            </label>
+            <label>
+              用户/组织
+              <input id="owner" type="text" placeholder="owner" />
+            </label>
+          </div>
+
+          <div class="grid two">
+            <label>
+              仓库名
+              <input id="repo" type="text" placeholder="repo" />
+            </label>
+            <label>
+              分支
+              <input id="branch" type="text" placeholder="main/master" />
+            </label>
+          </div>
+
+          <label>
+            文件路径
+            <input id="path" type="text" placeholder="bookmarks/snapshot.json" />
+          </label>
+        </section>
+
+        <section class="group">
+          <h2>自动同步</h2>
+          <p class="group-desc">开启后会按间隔自动执行“推送本地到云端”。</p>
+          <div class="grid two">
+            <label class="switch">
+              <input id="autoSyncEnabled" type="checkbox" />
+              启用自动推送
+            </label>
+            <label>
+              自动推送间隔(分钟)
+              <input id="autoSyncIntervalMinutes" type="number" min="15" step="1" />
+            </label>
+          </div>
+        </section>
+
+        <div class="actions">
+          <button id="saveBtn" class="main">保存设置</button>
+          <button id="testBtn" class="secondary">测试连接</button>
+        </div>
+
+        <section class="meta">
+          <p class="tips">
+            GitHub 令牌建议最少授予仓库内容读写权限（Fine-grained token 的 Contents: Read and write）。
+          </p>
+          <p id="lastSync" class="muted">最近同步: 无</p>
+          <p id="status" class="status"></p>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="./options.js"></script>
+  </body>
+</html>

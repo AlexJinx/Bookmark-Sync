@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>书签同步</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <main class="panel">
+      <header class="hero">
+        <div class="mark">SYNC</div>
+        <div class="hero-text">
+          <h1>书签同步</h1>
+          <p>私有仓库 · 安全可控</p>
+        </div>
+      </header>
+
+      <p id="lastSync" class="last">最近同步: 无</p>
+
+      <section class="section">
+        <p class="section-title">同步操作</p>
+        <div class="actions">
+          <button id="pushBtn" class="main">推送本地到云端</button>
+          <button id="pullBtn" class="danger">拉取云端覆盖本地</button>
+        </div>
+      </section>
+
+      <section class="section">
+        <p class="section-title">备份工具</p>
+        <div class="tools">
+          <button id="exportBtn" class="ghost">导出到 JSON 文件</button>
+          <button id="importBtn" class="ghost">从 JSON 文件导入</button>
+        </div>
+      </section>
+
+      <input id="importInput" type="file" accept="application/json" hidden />
+
+      <div class="settings">
+        <button id="optionsBtn" class="setting-btn">打开设置</button>
+      </div>
+
+      <pre id="conflictPreview" class="conflict hidden"></pre>
+      <p id="status" class="status"></p>
+    </main>
+
+    <script type="module" src="./popup.js"></script>
+  </body>
+</html>
