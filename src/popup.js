@@ -55,13 +55,6 @@ function isPushAllMode() {
 }
 
 function setActionBusy(busy) {
-  for (const id of ["exportBtn", "importBtn"]) {
-    const element = $(id);
-    if (element) {
-      element.disabled = busy;
-    }
-  }
-
   const pushBtn = $("pushBtn");
   if (pushBtn) {
     pushBtn.disabled = busy || availableProviders.length === 0;
@@ -87,11 +80,6 @@ function setActionBusy(busy) {
     if (radio) {
       radio.disabled = busy || availableProviders.length <= 1;
     }
-  }
-
-  const importInput = $("importInput");
-  if (importInput) {
-    importInput.disabled = busy;
   }
 }
 
@@ -303,21 +291,6 @@ async function refreshLastSync() {
   $("lastSync").textContent = `最近同步: ${formatLastSync(lastSync)}`;
 }
 
-function downloadSnapshot(snapshot) {
-  const fileName = `bookmarks-${new Date().toISOString().replace(/[.:]/g, "-")}.json`;
-  const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
 function isConflictError(error) {
   return error?.code === "SYNC_CONFLICT";
 }
@@ -421,42 +394,6 @@ async function onPull() {
   }
 }
 
-async function onExport() {
-  clearConflictPreview();
-  setStatus("正在导出...");
-  const snapshot = await sendMessage("exportLocal");
-  downloadSnapshot(snapshot);
-  setStatus("导出完成");
-}
-
-function onImportClick() {
-  if (isRunning) {
-    return;
-  }
-  $("importInput").value = "";
-  $("importInput").click();
-}
-
-async function onImportFile(event) {
-  const file = event.target.files?.[0];
-  if (!file) {
-    return;
-  }
-
-  clearConflictPreview();
-  setStatus("正在导入...");
-  const text = await file.text();
-  let snapshot;
-  try {
-    snapshot = JSON.parse(text);
-  } catch {
-    throw new Error("JSON 文件格式错误");
-  }
-
-  await sendMessage("importLocal", { snapshot });
-  setStatus("导入完成");
-}
-
 function onPushTargetChanged() {
   syncPushModeUi();
   run(async () => {
@@ -468,9 +405,6 @@ function onPushTargetChanged() {
 function bindEvents() {
   $("pushBtn").addEventListener("click", () => run(onPush));
   $("pullBtn").addEventListener("click", () => run(onPull));
-  $("exportBtn").addEventListener("click", () => run(onExport));
-  $("importBtn").addEventListener("click", onImportClick);
-  $("importInput").addEventListener("change", (event) => run(() => onImportFile(event)));
   $("optionsBtn").addEventListener("click", () => chrome.runtime.openOptionsPage());
   $("pushTargetCurrent").addEventListener("change", onPushTargetChanged);
   $("pushTargetAll").addEventListener("change", onPushTargetChanged);

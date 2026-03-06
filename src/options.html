@@ -12,7 +12,7 @@
         <header class="hero">
           <div class="hero-title">
             <h1>书签同步设置</h1>
-            <p>先连接仓库，再在弹窗里执行推送/拉取与备份。</p>
+            <p>先连接仓库，弹窗负责同步操作，当前页负责备份与迁移。</p>
           </div>
           <div class="hero-tag">Repo Mode</div>
         </header>
@@ -52,7 +52,16 @@
                   aria-label="显示令牌"
                   aria-pressed="false"
                 >
-                  显示
+                  <span class="visually-hidden">显示令牌</span>
+                  <svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M1.8 12s3.4-6.2 10.2-6.2s10.2 6.2 10.2 6.2s-3.4 6.2-10.2 6.2S1.8 12 1.8 12z" />
+                    <circle cx="12" cy="12" r="3.2" />
+                  </svg>
+                  <svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M3 3l18 18" />
+                    <path d="M10.8 6C11.2 5.9 11.6 5.8 12 5.8c6.8 0 10.2 6.2 10.2 6.2c-.6 1-1.6 2.4-3.1 3.6" />
+                    <path d="M6.5 8.5C4.1 10.3 2.8 12 2.8 12s3.4 6.2 10.2 6.2c1.4 0 2.6-.3 3.7-.8" />
+                  </svg>
                 </button>
               </div>
             </label>
@@ -101,19 +110,59 @@
           </div>
         </section>
 
-        <div class="actions">
-          <button id="saveBtn" class="main">保存设置</button>
-          <button id="testBtn" class="secondary">测试连接</button>
+        <div class="quick-actions">
+          <p id="dirtyHint" class="dirty-hint">所有更改已保存</p>
+          <div class="actions quick-buttons">
+            <button id="saveBtn" class="main">保存设置</button>
+            <button id="testBtn" class="secondary">测试连接</button>
+          </div>
         </div>
+
+        <section class="group backup-hub">
+          <div class="backup-head">
+            <h2>备份与迁移</h2>
+            <p class="group-desc">书签数据与配置参数统一管理，迁移设备时可一次完成。</p>
+          </div>
+
+          <div class="backup-grid">
+            <article class="backup-card">
+              <p class="backup-badge">书签数据</p>
+              <h3>导出 / 导入书签快照</h3>
+              <p class="backup-desc">用于离线备份和恢复，不包含平台令牌。</p>
+              <div class="backup-actions">
+                <button id="exportBookmarksBtn" class="ghost" type="button">导出书签 JSON</button>
+                <button id="importBookmarksBtn" class="ghost" type="button">导入书签 JSON</button>
+              </div>
+            </article>
+
+            <article class="backup-card secure">
+              <p class="backup-badge">配置参数</p>
+              <h3>导出 / 导入平台配置</h3>
+              <p class="backup-desc">包含 Token、仓库定位与自动同步参数，请妥善保管文件。</p>
+              <div class="backup-actions">
+                <button id="exportConfigBtn" class="secondary" type="button">导出配置 JSON</button>
+                <button id="importConfigBtn" class="secondary" type="button">导入配置 JSON</button>
+              </div>
+            </article>
+          </div>
+
+          <input id="importBookmarksInput" type="file" accept="application/json" hidden />
+          <input id="importConfigInput" type="file" accept="application/json" hidden />
+          <p class="field-note backup-note">安全提示：配置文件包含访问令牌，仅建议在可信设备与私有通道中保存和传输。</p>
+        </section>
 
         <section class="meta">
           <p class="tips">
             GitHub 令牌建议最少授予仓库内容读写权限（Fine-grained token 的 Contents: Read and write）。
           </p>
           <p id="lastSync" class="muted">最近同步: 无</p>
-          <p id="status" class="status hidden"></p>
         </section>
       </section>
+
+      <div id="status" class="status hidden" role="status" aria-live="polite">
+        <span id="statusText"></span>
+        <button id="statusCloseBtn" class="status-close" type="button" aria-label="关闭提示">×</button>
+      </div>
     </main>
 
     <script type="module" src="./options.js"></script>
