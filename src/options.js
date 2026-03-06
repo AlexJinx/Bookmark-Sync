@@ -96,17 +96,6 @@ function markClean() {
   setDirtyState(false);
 }
 
-function formatTime(iso) {
-  if (!iso) {
-    return "无";
-  }
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) {
-    return "无";
-  }
-  return d.toLocaleString();
-}
-
 function normalizeIntervalMinutes(value) {
   const parsed = Math.floor(Number(value));
   if (!Number.isFinite(parsed)) {
@@ -401,13 +390,10 @@ function render(config) {
 }
 
 async function load() {
-  const [config, lastSync] = await Promise.all([sendMessage("getConfig"), sendMessage("getLastSync")]);
+  const config = await sendMessage("getConfig");
   scopedDrafts.github = null;
   scopedDrafts.gitee = null;
   render(config);
-  document.getElementById("lastSync").textContent = lastSync
-    ? `最近同步: ${formatTime(lastSync.at)} (${lastSync.direction || "manual"}, ${lastSync.provider || "-"})`
-    : "最近同步: 无";
   markClean();
 }
 
