@@ -1,0 +1,11 @@
+{
+  "extName": {
+    "message": "书签同步"
+  },
+  "extDescription": {
+    "message": "在 Chrome/Edge 中将书签同步到私有 GitHub 或 Gitee 仓库。"
+  },
+  "actionTitle": {
+    "message": "书签同步"
+  }
+}

@@ -19,6 +19,7 @@
 11. [Gitee 配置流程](#gitee-配置流程)
 12. [常见问题](#常见问题)
 13. [安全建议](#安全建议)
+14. [版本更新](#版本更新)
 
 ---
 
@@ -70,6 +71,11 @@
 2. 开启“开发人员模式”
 3. 点击“加载解压缩的扩展”
 4. 选择本项目根目录（含 `manifest.json`）
+
+发布打包注意：
+
+- 商店上传包必须包含 `_locales` 目录（如 `_locales/zh_CN/messages.json`）
+- 若 `manifest.json` 中存在 `default_locale` 但压缩包缺少 `_locales`，会触发包校验错误
 
 ---
 
@@ -243,6 +249,16 @@
 3. 不在公开场景泄露 Token
 4. 定期轮换 Token
 5. 强制覆盖前先做 JSON 备份
+
+---
+
+## 版本更新
+
+### 0.1.2（2026-03-06）
+
+- 新增扩展国际化配置：`manifest.json` 使用 `default_locale` 与 `__MSG_*__` 文案键
+- 新增语言资源：`_locales/zh_CN/messages.json`、`_locales/en/messages.json`
+- 支持在 Chrome / Edge 商店识别中文（简体）与英文语言信息
 
 ---
 

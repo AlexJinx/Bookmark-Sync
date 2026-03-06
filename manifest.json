@@ -1,8 +1,9 @@
 ﻿{
   "manifest_version": 3,
-  "name": "Bookmark Sync",
-  "version": "0.1.0",
-  "description": "在 Chrome/Edge 中将书签同步到私有 GitHub 或 Gitee 仓库。",
+  "default_locale": "zh_CN",
+  "name": "__MSG_extName__",
+  "version": "0.1.2",
+  "description": "__MSG_extDescription__",
   "permissions": [
     "bookmarks",
     "storage",
@@ -17,7 +18,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Bookmark Sync",
+    "default_title": "__MSG_actionTitle__",
     "default_popup": "src/popup.html",
     "default_icon": {
       "16": "assets/icons/icon16.png",
