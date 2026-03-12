@@ -322,31 +322,32 @@ select:focus {
 }
 
 .token-input-wrap input {
-  padding-right: 48px;
+  padding-right: 38px;
 }
 
 .token-visibility-btn {
   position: absolute;
-  right: 6px;
+  right: 10px;
   top: 50%;
-  width: 34px;
-  height: 34px;
-  min-width: 34px;
-  min-height: 34px;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  min-height: 22px;
   padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #d6dfe9;
-  border-radius: 10px;
-  background: linear-gradient(180deg, #f9fbff, #eef3f9);
-  color: #5b6778;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #778497;
   box-shadow: none;
   transform: translateY(-50%);
 }
 
 .token-visibility-btn:hover {
-  background: linear-gradient(180deg, #ffffff, #edf2f9);
+  background: transparent;
+  color: #e05010;
   transform: translateY(-50%);
   filter: none;
 }
@@ -357,18 +358,17 @@ select:focus {
 
 .token-visibility-btn.is-visible {
   color: #d6470f;
-  border-color: #f0c7ad;
-  background: linear-gradient(180deg, #fff5ef, #ffe9dc);
+  background: transparent;
 }
 
 .token-visibility-btn:focus-visible {
-  outline: 2px solid #e05010;
-  outline-offset: 1px;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(224, 80, 16, 0.3);
 }
 
 .eye-icon {
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;

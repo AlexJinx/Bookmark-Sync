@@ -154,6 +154,33 @@ async function getLocalSnapshotAndHash() {
   return { snapshot, localHash };
 }
 
+function countBookmarkNodes(nodes) {
+  let count = 0;
+  for (const node of nodes || []) {
+    if (!node || typeof node !== "object") {
+      continue;
+    }
+
+    if (node.type === "bookmark") {
+      count += 1;
+      continue;
+    }
+
+    if (Array.isArray(node.children)) {
+      count += countBookmarkNodes(node.children);
+    }
+  }
+  return count;
+}
+
+function countSnapshotBookmarks(snapshot) {
+  let total = 0;
+  for (const root of snapshot?.roots || []) {
+    total += countBookmarkNodes(root?.children || []);
+  }
+  return total;
+}
+
 async function getRemoteSnapshotAndHash(remote) {
   if (!remote.exists) {
     throw new Error("远端文件不存在，请先执行一次推送");
@@ -456,6 +483,70 @@ async function pullFromRemote({ force = false, provider = "" } = {}) {
   return lastSync;
 }
 
+async function getRemoteBookmarkCount(config, provider) {
+  if (!PROVIDER_KEYS.includes(provider)) {
+    throw new Error(`未知 provider: ${provider}`);
+  }
+
+  if (!isProviderConfigured(config, provider)) {
+    return {
+      provider,
+      configured: false,
+      exists: false,
+      bookmarks: null,
+      message: "未配置"
+    };
+  }
+
+  try {
+    const client = createProviderClient(withProvider(config, provider));
+    const remoteFile = await client.getRemoteFile();
+
+    if (!remoteFile.exists) {
+      return {
+        provider,
+        configured: true,
+        exists: false,
+        bookmarks: null,
+        message: "远端暂无快照"
+      };
+    }
+
+    const remoteSnapshot = parseSnapshotText(remoteFile.contentText || "");
+    return {
+      provider,
+      configured: true,
+      exists: true,
+      bookmarks: countSnapshotBookmarks(remoteSnapshot),
+      message: ""
+    };
+  } catch (error) {
+    return {
+      provider,
+      configured: true,
+      exists: null,
+      bookmarks: null,
+      message: error.message || String(error)
+    };
+  }
+}
+
+async function getBookmarkCounts() {
+  const [config, localSnapshot] = await Promise.all([getConfig(), exportSnapshot()]);
+  const localBookmarks = countSnapshotBookmarks(localSnapshot);
+
+  const remotes = {};
+  const results = await Promise.all(PROVIDER_KEYS.map((provider) => getRemoteBookmarkCount(config, provider)));
+  for (const item of results) {
+    remotes[item.provider] = item;
+  }
+
+  return {
+    localBookmarks,
+    remotes
+  };
+}
+
 async function handleMessage(message) {
   switch (message?.action) {
     case "getConfig":
@@ -476,6 +567,8 @@ async function handleMessage(message) {
       return exportSnapshot();
     case "importLocal":
       return importSnapshot(message.snapshot);
+    case "getBookmarkCounts":
+      return getBookmarkCounts();
     case "pushToRemote":
       return pushToRemote({
         force: Boolean(message.force),

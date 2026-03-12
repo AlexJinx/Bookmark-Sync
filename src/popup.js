@@ -291,6 +291,86 @@ async function refreshLastSync() {
   $("lastSync").textContent = `最近同步: ${formatLastSync(lastSync)}`;
 }
 
+function formatCount(value) {
+  return Number.isFinite(value) ? String(value) : "--";
+}
+
+function setCountNodeValue(node, valueText, tooltip = "") {
+  if (!node) {
+    return;
+  }
+
+  node.textContent = valueText;
+  const titleText = typeof tooltip === "string" ? tooltip.trim() : "";
+  if (titleText) {
+    node.title = titleText;
+  } else {
+    node.removeAttribute("title");
+  }
+
+  const chip = node.closest(".count-chip");
+  if (!chip) {
+    return;
+  }
+  if (titleText) {
+    chip.title = titleText;
+  } else {
+    chip.removeAttribute("title");
+  }
+}
+
+function toCompactRemoteStatus(message) {
+  const text = typeof message === "string" ? message.trim() : "";
+  if (!text) {
+    return "--";
+  }
+
+  if (text.includes("未配置")) {
+    return "未配";
+  }
+  if (text.includes("暂无快照")) {
+    return "暂无";
+  }
+  if (text.includes("超时")) {
+    return "超时";
+  }
+  return "异常";
+}
+
+function renderProviderBookmarkCount(provider, remoteData) {
+  const node = $(`${provider}BookmarkCount`);
+  if (!node) {
+    return;
+  }
+
+  const label = PROVIDER_LABELS[provider] || provider;
+
+  if (Number.isFinite(remoteData?.bookmarks)) {
+    setCountNodeValue(node, String(remoteData.bookmarks), `${label} 云端书签: ${remoteData.bookmarks} 条`);
+    return;
+  }
+
+  const shortStatus = toCompactRemoteStatus(remoteData?.message);
+  const tooltip = typeof remoteData?.message === "string" ? `${label}: ${remoteData.message}` : `${label}: 未知状态`;
+  setCountNodeValue(node, shortStatus, tooltip);
+}
+
+function renderBookmarkCounts(counts) {
+  const localNode = $("localBookmarkCount");
+  const localValue = formatCount(counts?.localBookmarks);
+  setCountNodeValue(localNode, localValue, Number.isFinite(counts?.localBookmarks) ? `本地书签: ${counts.localBookmarks} 条` : "");
+
+  const remotes = counts?.remotes || {};
+  for (const provider of Object.keys(PROVIDER_LABELS)) {
+    renderProviderBookmarkCount(provider, remotes[provider] || null);
+  }
+}
+
+async function refreshBookmarkCounts() {
+  const counts = await sendMessage("getBookmarkCounts");
+  renderBookmarkCounts(counts);
+}
+
 function isConflictError(error) {
   return error?.code === "SYNC_CONFLICT";
 }
@@ -329,7 +409,7 @@ async function onPush() {
     } else {
       setStatus(result?.noop ? "已同步，无需推送" : "推送完成");
     }
-    await refreshLastSync();
+    await Promise.all([refreshLastSync(), refreshBookmarkCounts()]);
   } catch (error) {
     if (!isConflictError(error)) {
       throw error;
@@ -354,7 +434,7 @@ async function onPush() {
     } else {
       setStatus(result?.noop ? "已同步，无需推送" : "强制推送完成");
     }
-    await refreshLastSync();
+    await Promise.all([refreshLastSync(), refreshBookmarkCounts()]);
   }
 }
 
@@ -373,7 +453,7 @@ async function onPull() {
   try {
     const result = await sendMessage("pullFromRemote", { provider });
     setStatus(result?.noop ? "已是最新，无需覆盖" : "拉取并导入完成");
-    await refreshLastSync();
+    await Promise.all([refreshLastSync(), refreshBookmarkCounts()]);
   } catch (error) {
     if (!isConflictError(error)) {
       throw error;
@@ -390,7 +470,7 @@ async function onPull() {
     const result = await sendMessage("pullFromRemote", { force: true, provider });
     clearConflictPreview();
     setStatus(result?.noop ? "已是最新，无需覆盖" : "强制拉取完成");
-    await refreshLastSync();
+    await Promise.all([refreshLastSync(), refreshBookmarkCounts()]);
   }
 }
 
@@ -432,7 +512,11 @@ async function init() {
   bindEvents();
   clearConflictPreview();
   await run(async () => {
-    await Promise.all([loadSyncControls(), refreshLastSync()]);
+    await loadSyncControls();
+    await refreshLastSync();
+  });
+  refreshBookmarkCounts().catch((error) => {
+    setStatus(error.message || String(error), true);
   });
 }
 
