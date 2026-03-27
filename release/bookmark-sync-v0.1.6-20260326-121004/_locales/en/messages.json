@@ -1,0 +1,11 @@
+{
+  "extName": {
+    "message": "Bookmark Sync"
+  },
+  "extDescription": {
+    "message": "Sync bookmarks in Chrome/Edge to your private GitHub or Gitee repository."
+  },
+  "actionTitle": {
+    "message": "Bookmark Sync"
+  }
+}

@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>书签同步设置</title>
+    <link rel="stylesheet" href="./options.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="panel">
+        <header class="hero">
+          <div class="hero-title">
+            <h1>书签同步设置</h1>
+            <p>先连接仓库，弹窗负责同步操作，当前页负责备份与迁移。</p>
+          </div>
+          <div class="hero-tag">Repo Mode</div>
+        </header>
+
+        <section class="group">
+          <h2>仓库连接</h2>
+          <p class="group-desc">选择提供方并填写仓库定位信息。</p>
+
+          <label class="field-provider">
+            同步提供方
+            <select id="provider" class="native-provider">
+              <option value="github">GitHub</option>
+              <option value="gitee">Gitee</option>
+            </select>
+            <div id="providerSelect" class="provider-select" data-open="false">
+              <button id="providerTrigger" type="button" class="provider-trigger" aria-haspopup="listbox" aria-expanded="false">
+                <span id="providerLabel">GitHub</span>
+                <span class="provider-caret" aria-hidden="true"></span>
+              </button>
+              <div id="providerMenu" class="provider-menu" role="listbox" aria-label="同步提供方">
+                <button type="button" class="provider-option" data-value="github" role="option">GitHub</button>
+                <button type="button" class="provider-option" data-value="gitee" role="option">Gitee</button>
+              </div>
+            </div>
+            <span class="field-note">可随时切换 GitHub / Gitee，下面仓库配置按当前提供方保存。</span>
+          </label>
+
+          <div class="grid two">
+            <label class="token-field">
+              Token
+              <div class="token-input-wrap">
+                <input id="token" type="password" placeholder="访问令牌" />
+                <button
+                  id="tokenVisibilityBtn"
+                  class="token-visibility-btn"
+                  type="button"
+                  aria-label="显示令牌"
+                  aria-pressed="false"
+                >
+                  <span class="visually-hidden">显示令牌</span>
+                  <svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M1.8 12s3.4-6.2 10.2-6.2s10.2 6.2 10.2 6.2s-3.4 6.2-10.2 6.2S1.8 12 1.8 12z" />
+                    <circle cx="12" cy="12" r="3.2" />
+                  </svg>
+                  <svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M3 3l18 18" />
+                    <path d="M10.8 6C11.2 5.9 11.6 5.8 12 5.8c6.8 0 10.2 6.2 10.2 6.2c-.6 1-1.6 2.4-3.1 3.6" />
+                    <path d="M6.5 8.5C4.1 10.3 2.8 12 2.8 12s3.4 6.2 10.2 6.2c1.4 0 2.6-.3 3.7-.8" />
+                  </svg>
+                </button>
+              </div>
+            </label>
+            <label>
+              用户/组织
+              <input id="owner" type="text" placeholder="owner" />
+            </label>
+          </div>
+
+          <div class="grid two">
+            <label>
+              仓库名
+              <input id="repo" type="text" placeholder="repo" />
+            </label>
+            <label>
+              分支
+              <input id="branch" type="text" placeholder="main/master" />
+            </label>
+          </div>
+
+          <label>
+            文件路径
+            <input id="path" type="text" placeholder="bookmarks/snapshot.json" />
+          </label>
+        </section>
+
+        <section class="group">
+          <h2>自动同步</h2>
+          <p class="group-desc">开启后会按间隔自动执行“推送本地到云端”。</p>
+          <div class="grid two">
+            <label class="switch">
+              <input id="autoSyncEnabled" type="checkbox" />
+              启用自动推送
+            </label>
+            <label>
+              自动推送间隔(分钟)
+              <input
+                id="autoSyncIntervalMinutes"
+                type="number"
+                min="15"
+                step="1"
+                aria-describedby="autoSyncIntervalHint"
+              />
+              <span id="autoSyncIntervalHint" class="field-note">最小 15 分钟，低于该值会自动调整为 15。</span>
+            </label>
+          </div>
+        </section>
+
+        <div class="quick-actions">
+          <p id="dirtyHint" class="dirty-hint">所有更改已保存</p>
+          <div class="actions quick-buttons">
+            <button id="saveBtn" class="main">保存设置</button>
+            <button id="testBtn" class="secondary">测试连接</button>
+          </div>
+        </div>
+
+        <section class="group backup-hub">
+          <div class="backup-head">
+            <h2>备份与迁移</h2>
+            <p class="group-desc">书签数据与配置参数统一管理，迁移设备时可一次完成。</p>
+          </div>
+
+          <div class="backup-grid">
+            <article class="backup-card">
+              <p class="backup-badge">书签数据</p>
+              <h3>导出 / 导入书签快照</h3>
+              <p class="backup-desc">用于离线备份和恢复，不包含平台令牌。</p>
+              <div class="backup-actions">
+                <button id="exportBookmarksBtn" class="ghost" type="button">导出书签 JSON</button>
+                <button id="importBookmarksBtn" class="ghost" type="button">导入书签 JSON</button>
+              </div>
+            </article>
+
+            <article class="backup-card secure">
+              <p class="backup-badge">配置参数</p>
+              <h3>导出 / 导入平台配置</h3>
+              <p class="backup-desc">包含 Token、仓库定位与自动同步参数，请妥善保管文件。</p>
+              <div class="backup-actions">
+                <button id="exportConfigBtn" class="secondary" type="button">导出配置 JSON</button>
+                <button id="importConfigBtn" class="secondary" type="button">导入配置 JSON</button>
+              </div>
+            </article>
+          </div>
+
+          <input id="importBookmarksInput" type="file" accept="application/json" hidden />
+          <input id="importConfigInput" type="file" accept="application/json" hidden />
+          <p class="field-note backup-note">安全提示：配置文件包含访问令牌，仅建议在可信设备与私有通道中保存和传输。</p>
+        </section>
+
+        <section class="meta">
+          <p class="tips">
+            GitHub 令牌建议最少授予仓库内容读写权限（Fine-grained token 的 Contents: Read and write）。
+          </p>
+          <p id="lastSync" class="muted">最近同步: 无</p>
+        </section>
+      </section>
+
+      <div id="status" class="status hidden" role="status" aria-live="polite">
+        <span id="statusText"></span>
+        <button id="statusCloseBtn" class="status-close" type="button" aria-label="关闭提示">×</button>
+      </div>
+    </main>
+
+    <script type="module" src="./options.js"></script>
+  </body>
+</html>
