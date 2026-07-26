@@ -14,7 +14,7 @@ function flattenSnapshot(snapshot) {
         entries.push({
           type: "bookmark",
           key: `B|${parentPath}|${title}|${url}`,
-          label: `[书签] ${path} -> ${url}`
+          sample: { kind: "bookmark", path, url }
         });
         continue;
       }
@@ -24,7 +24,7 @@ function flattenSnapshot(snapshot) {
       entries.push({
         type: "folder",
         key: `F|${parentPath}|${title}`,
-        label: `[文件夹] ${path}`
+        sample: { kind: "folder", path, url: "" }
       });
       walkNodes(node.children || [], path);
     }
@@ -60,7 +60,7 @@ function toMultiMap(entries) {
   for (const item of entries) {
     const current = map.get(item.key);
     if (!current) {
-      map.set(item.key, { count: 1, label: item.label });
+      map.set(item.key, { count: 1, sample: item.sample });
     } else {
       current.count += 1;
     }
@@ -68,19 +68,20 @@ function toMultiMap(entries) {
   return map;
 }
 
-function expandDiffLabels(map, limit) {
-  const labels = [];
+function expandDiffSamples(map, limit) {
+  const samples = [];
   for (const [, value] of map) {
     for (let i = 0; i < value.count; i += 1) {
-      labels.push(value.label);
-      if (labels.length >= limit) {
-        return labels;
+      samples.push(value.sample);
+      if (samples.length >= limit) {
+        return samples;
       }
     }
   }
-  return labels;
+  return samples;
 }
 
+// 差异摘要：samples 输出结构化 {kind, path, url}，由 UI 负责格式化文案。
 export function buildDiffSummary(localSnapshot, remoteSnapshot, sampleLimit = 6) {
   const localEntries = flattenSnapshot(localSnapshot);
   const remoteEntries = flattenSnapshot(remoteSnapshot);
@@ -104,12 +105,12 @@ export function buildDiffSummary(localSnapshot, remoteSnapshot, sampleLimit = 6)
     if (localCount > remoteCount) {
       onlyLocalMap.set(key, {
         count: localCount - remoteCount,
-        label: local?.label || remote?.label || key
+        sample: local?.sample || remote?.sample
       });
     } else if (remoteCount > localCount) {
       onlyRemoteMap.set(key, {
         count: remoteCount - localCount,
-        label: remote?.label || local?.label || key
+        sample: remote?.sample || local?.sample
       });
     }
   }
@@ -129,8 +130,8 @@ export function buildDiffSummary(localSnapshot, remoteSnapshot, sampleLimit = 6)
     onlyLocalTotal,
     onlyRemoteTotal,
     samples: {
-      onlyLocal: expandDiffLabels(onlyLocalMap, sampleLimit),
-      onlyRemote: expandDiffLabels(onlyRemoteMap, sampleLimit)
+      onlyLocal: expandDiffSamples(onlyLocalMap, sampleLimit),
+      onlyRemote: expandDiffSamples(onlyRemoteMap, sampleLimit)
     }
   };
 }

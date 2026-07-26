@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>书签同步设置</title>
+    <link rel="stylesheet" href="./options.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="panel">
+        <header class="hero">
+          <div class="hero-title">
+            <h1>书签同步设置</h1>
+            <p>先连接平台，弹窗负责同步操作，当前页负责备份与迁移。</p>
+          </div>
+          <div class="hero-tag">Sync Hub</div>
+        </header>
+
+        <section class="group">
+          <h2>平台连接</h2>
+          <p class="group-desc">选择提供方并填写定位信息。GitHub / Gitee 为仓库模式，Gist 只需 Token 即可开始。</p>
+
+          <label class="field-provider">
+            同步提供方
+            <select id="provider" class="native-provider"></select>
+            <div id="providerSelect" class="provider-select" data-open="false">
+              <button id="providerTrigger" type="button" class="provider-trigger" aria-haspopup="listbox" aria-expanded="false">
+                <span id="providerLabel">GitHub</span>
+                <span class="provider-caret" aria-hidden="true"></span>
+              </button>
+              <div id="providerMenu" class="provider-menu" role="listbox" aria-label="同步提供方"></div>
+            </div>
+            <span class="field-note">可随时切换平台，下面的配置按当前提供方分别保存。</span>
+          </label>
+
+          <label class="token-field">
+            Token
+            <div class="token-input-wrap">
+              <input id="token" type="password" placeholder="访问令牌" />
+              <button
+                id="tokenVisibilityBtn"
+                class="token-visibility-btn"
+                type="button"
+                aria-label="显示令牌"
+                aria-pressed="false"
+              >
+                <span class="visually-hidden">显示令牌</span>
+                <svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M1.8 12s3.4-6.2 10.2-6.2s10.2 6.2 10.2 6.2s-3.4 6.2-10.2 6.2S1.8 12 1.8 12z" />
+                  <circle cx="12" cy="12" r="3.2" />
+                </svg>
+                <svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M3 3l18 18" />
+                  <path d="M10.8 6C11.2 5.9 11.6 5.8 12 5.8c6.8 0 10.2 6.2 10.2 6.2c-.6 1-1.6 2.4-3.1 3.6" />
+                  <path d="M6.5 8.5C4.1 10.3 2.8 12 2.8 12s3.4 6.2 10.2 6.2c1.4 0 2.6-.3 3.7-.8" />
+                </svg>
+              </button>
+            </div>
+            <span id="tokenNote" class="field-note"></span>
+          </label>
+
+          <div id="repoFields">
+            <div class="grid two">
+              <label>
+                用户/组织
+                <input id="owner" type="text" placeholder="owner" />
+              </label>
+              <label>
+                仓库名
+                <input id="repo" type="text" placeholder="repo" />
+              </label>
+            </div>
+
+            <div class="grid two">
+              <label>
+                分支
+                <input id="branch" type="text" placeholder="main/master" />
+              </label>
+              <label>
+                文件路径
+                <input id="path" type="text" placeholder="bookmarks/snapshot.json" />
+              </label>
+            </div>
+          </div>
+
+          <div id="gistFields" class="hidden">
+            <div class="grid two">
+              <label>
+                Gist ID（可留空）
+                <input id="gistId" type="text" placeholder="留空则首次推送自动创建私有 Gist" />
+              </label>
+              <label>
+                文件名
+                <input id="fileName" type="text" placeholder="bookmarks.json" />
+              </label>
+            </div>
+            <p class="field-note">留空 Gist ID 时，首次推送会自动创建私有 Gist 并回填到此处。</p>
+          </div>
+
+          <a id="historyLink" class="history-link hidden" target="_blank" rel="noopener">查看云端同步历史 →</a>
+        </section>
+
+        <section class="group">
+          <h2>自动同步</h2>
+          <p class="group-desc">变更触发：书签修改后延迟推送；定时推送：按固定间隔兜底。两者都只推送、不拉取。</p>
+
+          <div class="grid two">
+            <label class="switch">
+              <input id="changeSyncEnabled" type="checkbox" />
+              书签变更后自动推送
+            </label>
+            <label>
+              变更推送延迟(秒)
+              <input
+                id="changeSyncDebounceSeconds"
+                type="number"
+                min="30"
+                max="300"
+                step="1"
+                aria-describedby="debounceHint"
+              />
+              <span id="debounceHint" class="field-note">30 ~ 300 秒，改动停止后等待该时长再推送。</span>
+            </label>
+          </div>
+
+          <div class="grid two">
+            <label class="switch">
+              <input id="autoSyncEnabled" type="checkbox" />
+              启用定时推送
+            </label>
+            <label>
+              定时推送间隔(分钟)
+              <input
+                id="autoSyncIntervalMinutes"
+                type="number"
+                min="15"
+                step="1"
+                aria-describedby="autoSyncIntervalHint"
+              />
+              <span id="autoSyncIntervalHint" class="field-note">最小 15 分钟，低于该值会自动调整为 15。</span>
+            </label>
+          </div>
+
+          <label class="switch">
+            <input id="checkRemoteOnStartup" type="checkbox" />
+            浏览器启动时检查云端更新（仅提醒，不自动拉取）
+          </label>
+        </section>
+
+        <section class="group">
+          <h2>通知</h2>
+          <p class="group-desc">自动任务在后台运行，通过系统通知和图标徽章反馈结果。</p>
+          <div class="notify-grid">
+            <label class="switch">
+              <input id="notifyOnAutoSyncError" type="checkbox" />
+              自动推送失败 / 冲突时通知
+            </label>
+            <label class="switch">
+              <input id="notifyOnAutoSyncSuccess" type="checkbox" />
+              自动推送成功时通知
+            </label>
+            <label class="switch">
+              <input id="notifyOnManualDone" type="checkbox" />
+              手动推送 / 拉取完成时通知
+            </label>
+          </div>
+        </section>
+
+        <div class="quick-actions">
+          <p id="dirtyHint" class="dirty-hint">所有更改已保存</p>
+          <div class="actions quick-buttons">
+            <button id="saveBtn" class="main">保存设置</button>
+            <button id="testBtn" class="secondary">测试连接</button>
+          </div>
+        </div>
+
+        <section class="group backup-hub">
+          <div class="backup-head">
+            <h2>备份与迁移</h2>
+            <p class="group-desc">书签数据与配置参数统一管理，迁移设备时可一次完成。</p>
+          </div>
+
+          <div class="backup-grid">
+            <article class="backup-card">
+              <p class="backup-badge">书签数据</p>
+              <h3>导出 / 导入书签快照</h3>
+              <p class="backup-desc">用于离线备份和恢复，不包含平台令牌。</p>
+              <div class="backup-actions">
+                <button id="exportBookmarksBtn" class="ghost" type="button">导出书签 JSON</button>
+                <button id="importBookmarksBtn" class="ghost" type="button">导入书签 JSON</button>
+              </div>
+            </article>
+
+            <article class="backup-card secure">
+              <p class="backup-badge">配置参数</p>
+              <h3>导出 / 导入平台配置</h3>
+              <p class="backup-desc">包含 Token、平台定位与自动同步参数，请妥善保管文件。</p>
+              <div class="backup-actions">
+                <button id="exportConfigBtn" class="secondary" type="button">导出配置 JSON</button>
+                <button id="importConfigBtn" class="secondary" type="button">导入配置 JSON</button>
+              </div>
+            </article>
+          </div>
+
+          <input id="importBookmarksInput" type="file" accept="application/json" hidden />
+          <input id="importConfigInput" type="file" accept="application/json" hidden />
+          <p class="field-note backup-note">安全提示：配置文件包含访问令牌，仅建议在可信设备与私有通道中保存和传输。</p>
+        </section>
+
+        <section class="group danger-zone">
+          <h2>危险操作</h2>
+          <p class="group-desc">清空前会自动下载备份 JSON，并在扩展内保留最近一次清空备份用于恢复。</p>
+          <div class="danger-actions">
+            <button id="clearBookmarksBtn" class="danger" type="button">清空本地书签</button>
+            <button id="restoreClearBtn" class="ghost" type="button">恢复最近清空备份</button>
+          </div>
+          <p class="field-note">仅清空书签栏 / 其他书签 / 移动设备书签三个标准目录，不影响 Edge 工作区等浏览器托管目录，也不会改动云端数据。</p>
+        </section>
+
+      </section>
+
+      <div id="status" class="status hidden" role="status" aria-live="polite">
+        <span id="statusText"></span>
+        <button id="statusCloseBtn" class="status-close" type="button" aria-label="关闭提示">×</button>
+      </div>
+    </main>
+
+    <script type="module" src="./options.js"></script>
+  </body>
+</html>

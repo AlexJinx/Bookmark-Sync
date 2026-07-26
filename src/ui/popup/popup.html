@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>书签同步</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <main class="panel">
+      <header class="hero">
+        <div class="mark">SYNC</div>
+        <div class="hero-text">
+          <h1>书签同步</h1>
+          <p>私有仓库 · 安全可控</p>
+        </div>
+        <button id="optionsBtn" class="setting-btn icon-btn hero-settings" aria-label="打开设置" title="打开设置">
+          <span class="visually-hidden">打开设置</span>
+          <svg class="settings-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M12 8.5a3.5 3.5 0 1 0 0 7a3.5 3.5 0 0 0 0-7z" />
+            <path d="M19.4 13.2a7.8 7.8 0 0 0 .1-1.2a7.8 7.8 0 0 0-.1-1.2l2-1.5l-1.9-3.3l-2.4 1a8 8 0 0 0-2.1-1.2l-.4-2.6h-3.8l-.4 2.6a8 8 0 0 0-2.1 1.2l-2.4-1l-1.9 3.3l2 1.5A7.8 7.8 0 0 0 4.5 12c0 .4 0 .8.1 1.2l-2 1.5l1.9 3.3l2.4-1a8 8 0 0 0 2.1 1.2l.4 2.6h3.8l.4-2.6a8 8 0 0 0 2.1-1.2l2.4 1l1.9-3.3l-2-1.5z" />
+          </svg>
+        </button>
+      </header>
+
+      <div class="status-strip">
+        <span id="syncDot" class="sync-dot" data-state="idle" title="同步状态"></span>
+        <p id="lastSync" class="last-text">最近同步: 无</p>
+      </div>
+
+      <div id="countRefreshIndicator" class="count-refresh hidden" aria-live="polite">
+        <span class="count-refresh-spinner" aria-hidden="true"></span>
+        <span>正在刷新数量...</span>
+      </div>
+      <section id="counts" class="counts" aria-label="书签数量"></section>
+
+      <section class="section">
+        <div class="actions">
+          <button id="pushBtn" class="main big">推送到云端</button>
+          <p id="pushTargetHint" class="target-hint-line"></p>
+          <button id="pullBtn" class="danger big">拉取覆盖本地</button>
+          <p id="pullTargetHint" class="target-hint-line"></p>
+        </div>
+
+        <details id="advanced" class="advanced">
+          <summary>高级选项</summary>
+          <label class="provider-field">
+            默认平台
+            <select id="defaultProvider"></select>
+          </label>
+          <label class="chk-option">
+            <input id="pushAllChk" type="checkbox" />
+            推送到全部已配置平台
+          </label>
+          <p class="advanced-hint">自动同步也会使用该推送目标。</p>
+          <a id="historyLink" class="history-link hidden" target="_blank" rel="noopener">查看云端历史</a>
+        </details>
+      </section>
+
+      <pre id="conflictPreview" class="conflict hidden"></pre>
+      <p id="status" class="status hidden"></p>
+    </main>
+
+    <script type="module" src="./popup.js"></script>
+  </body>
+</html>

@@ -1,23 +1,8 @@
-class ActionError extends Error {
-  constructor(payload) {
-    if (typeof payload === "string") {
-      super(payload || "请求失败");
-      this.code = "";
-      this.details = null;
-      return;
-    }
+import { Actions, RemoteStatus } from "../../core/actions.js";
+import { getConfiguredProviders } from "../../core/config.js";
+import { PROVIDERS, getProviderLabel } from "../../providers/registry.js";
+import { send, isConflictError } from "../shared/messaging.js";
 
-    super(payload?.message || "请求失败");
-    this.code = payload?.code || "";
-    this.details = payload?.details || null;
-  }
-}
-
-const PROVIDER_LABELS = {
-  github: "GitHub",
-  gitee: "Gitee"
-};
-const PROVIDER_REQUIRED_FIELDS = ["token", "owner", "repo", "branch", "path"];
 const NO_PROVIDER_MESSAGE = "未检测到已配置平台，请先打开设置完成平台配置。";
 
 let isRunning = false;
@@ -28,17 +13,11 @@ let readyForEntryRefresh = false;
 let lastEntryRefreshAt = 0;
 const ENTRY_REFRESH_DEBOUNCE_MS = 500;
 
-async function sendMessage(action, extra = {}) {
-  const response = await chrome.runtime.sendMessage({ action, ...extra });
-  if (!response?.ok) {
-    throw new ActionError(response?.error || "请求失败");
-  }
-  return response.data;
-}
-
 function $(id) {
   return document.getElementById(id);
 }
+
+// ---- 状态提示 ----
 
 function setStatus(message, isError = false) {
   const status = $("status");
@@ -53,6 +32,15 @@ function setStatus(message, isError = false) {
   status.style.color = isError ? "#b42318" : "#1a1e24";
   status.classList.remove("hidden");
 }
+
+function setSyncDot(state) {
+  const dot = $("syncDot");
+  if (dot) {
+    dot.dataset.state = state || "idle";
+  }
+}
+
+// ---- 数量刷新 ----
 
 function setCountRefreshUiLoading(isLoading) {
   const indicator = $("countRefreshIndicator");
@@ -109,113 +97,136 @@ function triggerEntryRefresh() {
   });
 }
 
+// ---- 控件渲染（registry 驱动） ----
+
+function renderCountChips() {
+  const counts = $("counts");
+  counts.textContent = "";
+
+  const makeChip = (tag, valueId, tooltip) => {
+    const chip = document.createElement("p");
+    chip.className = "count-chip";
+    chip.title = tooltip;
+
+    const tagNode = document.createElement("span");
+    tagNode.className = "count-tag";
+    tagNode.textContent = tag;
+
+    const valueNode = document.createElement("span");
+    valueNode.id = valueId;
+    valueNode.className = "count-value";
+    valueNode.textContent = "--";
+
+    chip.append(tagNode, valueNode);
+    return chip;
+  };
+
+  counts.appendChild(makeChip("本地", "localBookmarkCount", "本地书签数量"));
+  for (const provider of availableProviders) {
+    const label = getProviderLabel(provider);
+    counts.appendChild(makeChip(label, `${provider}BookmarkCount`, `${label} 云端书签数量`));
+  }
+}
+
+function getDefaultProvider() {
+  const selected = $("defaultProvider")?.value || "";
+  if (availableProviders.includes(selected)) {
+    return selected;
+  }
+  if (availableProviders.includes(currentConfig?.provider)) {
+    return currentConfig.provider;
+  }
+  return availableProviders[0] || "";
+}
+
 function isPushAllMode() {
-  return Boolean($("pushTargetAll")?.checked);
+  return Boolean($("pushAllChk")?.checked);
 }
 
-function setActionBusy(busy) {
-  const pushBtn = $("pushBtn");
-  if (pushBtn) {
-    pushBtn.disabled = busy || availableProviders.length === 0;
-  }
+function updateTargetHints() {
+  const provider = getDefaultProvider();
+  const label = getProviderLabel(provider);
+  const pushHint = $("pushTargetHint");
+  const pullHint = $("pullTargetHint");
 
-  const pullBtn = $("pullBtn");
-  if (pullBtn) {
-    pullBtn.disabled = busy || availableProviders.length === 0;
+  if (pushHint) {
+    pushHint.textContent = isPushAllMode() ? "推送目标：全部已配置平台" : `推送目标：${label}`;
   }
-
-  const pullProvider = $("pullProvider");
-  if (pullProvider) {
-    pullProvider.disabled = busy || availableProviders.length <= 1;
-  }
-
-  const pushProvider = $("pushProvider");
-  if (pushProvider) {
-    pushProvider.disabled = busy || availableProviders.length <= 1 || isPushAllMode();
-  }
-
-  for (const id of ["pushTargetCurrent", "pushTargetAll"]) {
-    const radio = $(id);
-    if (radio) {
-      radio.disabled = busy || availableProviders.length <= 1;
-    }
+  if (pullHint) {
+    pullHint.textContent = `拉取来源：${label}`;
   }
 }
 
-function isProviderConfigured(config, provider) {
-  const scoped = config?.[provider];
-  if (!scoped || typeof scoped !== "object") {
-    return false;
+function updateHistoryLink() {
+  const link = $("historyLink");
+  if (!link) {
+    return;
   }
 
-  return PROVIDER_REQUIRED_FIELDS.every((field) => {
-    const value = scoped[field];
-    return typeof value === "string" && value.trim();
-  });
+  const provider = getDefaultProvider();
+  const meta = PROVIDERS[provider];
+  const scoped = currentConfig?.[provider] || {};
+  const url = meta?.historyUrl?.(scoped) || "";
+
+  link.classList.toggle("hidden", !url);
+  if (url) {
+    link.href = url;
+  }
 }
 
-function getConfiguredProviders(config) {
-  return Object.keys(PROVIDER_LABELS).filter((provider) => isProviderConfigured(config, provider));
-}
-
-function renderProviderOptions({ selectId, preferredProvider = "", emptyLabel = "无已配置平台" }) {
-  const select = $(selectId);
+function renderProviderSelect() {
+  const select = $("defaultProvider");
   if (!select) {
-    return "";
+    return;
   }
 
+  const preferred = select.value || currentConfig?.provider || "";
   select.textContent = "";
-
-  if (availableProviders.length === 0) {
-    const option = document.createElement("option");
-    option.value = "";
-    option.textContent = emptyLabel;
-    select.appendChild(option);
-    return "";
-  }
 
   for (const provider of availableProviders) {
     const option = document.createElement("option");
     option.value = provider;
-    option.textContent = PROVIDER_LABELS[provider] || provider;
+    option.textContent = getProviderLabel(provider);
     select.appendChild(option);
   }
 
-  const defaultProvider = availableProviders.includes(preferredProvider) ? preferredProvider : availableProviders[0];
-  select.value = defaultProvider;
-  return defaultProvider;
+  select.value = availableProviders.includes(preferred) ? preferred : availableProviders[0] || "";
 }
 
-function setPushTargetFromConfig(syncAllProviders) {
-  const syncAll = Boolean(syncAllProviders);
-  $("pushTargetAll").checked = syncAll;
-  $("pushTargetCurrent").checked = !syncAll;
-}
-
-function syncPushModeUi() {
-  const pushAll = isPushAllMode();
-  $("pushProviderField")?.classList.toggle("hidden", pushAll);
-
-  const pushBtn = $("pushBtn");
-  if (pushBtn) {
-    pushBtn.textContent = pushAll ? "推送到全部平台" : "推送本地到云端";
+function setActionBusy(busy) {
+  const disabled = busy || availableProviders.length === 0;
+  for (const id of ["pushBtn", "pullBtn"]) {
+    const btn = $(id);
+    if (btn) {
+      btn.disabled = disabled;
+    }
   }
 
-  setActionBusy(isRunning);
+  const select = $("defaultProvider");
+  if (select) {
+    select.disabled = busy;
+  }
+  const chk = $("pushAllChk");
+  if (chk) {
+    chk.disabled = busy;
+  }
 }
 
 function renderSyncControls(config) {
   currentConfig = config;
   availableProviders = getConfiguredProviders(config);
 
-  const preferredPull = $("pullProvider")?.value || config.provider || "";
-  const preferredPush = $("pushProvider")?.value || config.provider || "";
+  renderCountChips();
+  renderProviderSelect();
 
-  renderProviderOptions({ selectId: "pullProvider", preferredProvider: preferredPull });
-  renderProviderOptions({ selectId: "pushProvider", preferredProvider: preferredPush });
+  $("pushAllChk").checked = Boolean(config.syncAllProviders);
 
-  setPushTargetFromConfig(config.syncAllProviders);
-  syncPushModeUi();
+  // BookmarkHub 式零配置体验：只有一个平台时隐藏全部高级选项。
+  $("advanced").classList.toggle("hidden", availableProviders.length <= 1);
+
+  updateTargetHints();
+  updateHistoryLink();
+  setActionBusy(isRunning);
 
   if (availableProviders.length === 0) {
     setStatus(NO_PROVIDER_MESSAGE, true);
@@ -229,34 +240,11 @@ function renderSyncControls(config) {
 }
 
 async function loadSyncControls() {
-  const config = await sendMessage("getConfig");
+  const config = await send(Actions.GET_CONFIG);
   renderSyncControls(config);
 }
 
-function getSelectedProvider(selectId) {
-  const selected = $(selectId)?.value || "";
-  if (availableProviders.includes(selected)) {
-    return selected;
-  }
-  return availableProviders[0] || "";
-}
-
-async function persistPushTargetMode() {
-  const nextSyncAll = isPushAllMode();
-  const latestConfig = await sendMessage("getConfig");
-  currentConfig = latestConfig;
-
-  if (Boolean(latestConfig.syncAllProviders) === nextSyncAll) {
-    return;
-  }
-
-  const nextConfig = {
-    ...latestConfig,
-    syncAllProviders: nextSyncAll
-  };
-  const saved = await sendMessage("saveConfig", { config: nextConfig });
-  currentConfig = saved;
-}
+// ---- 冲突预览 ----
 
 function clearConflictPreview() {
   const box = $("conflictPreview");
@@ -264,26 +252,28 @@ function clearConflictPreview() {
   box.classList.add("hidden");
 }
 
+const CONFLICT_TYPE_NAMES = {
+  both_changed: "本地和远端均有变更",
+  remote_changed: "远端已更新",
+  local_changed: "本地有未同步改动",
+  no_base_diverged: "首次同步且内容不一致",
+  remote_deleted: "远端文件被删除",
+  remote_deleted_and_local_changed: "远端被删除且本地有新改动",
+  remote_deleted_during_update: "远端文件在推送过程中被删除"
+};
+
 function formatTypeName(type) {
-  if (type === "both_changed") {
-    return "本地和远端均有变更";
+  return CONFLICT_TYPE_NAMES[type] || "检测到冲突";
+}
+
+function formatDiffSample(sample) {
+  if (!sample || typeof sample !== "object") {
+    return String(sample || "");
   }
-  if (type === "remote_changed") {
-    return "远端已更新";
+  if (sample.kind === "bookmark") {
+    return `[书签] ${sample.path} -> ${sample.url}`;
   }
-  if (type === "local_changed") {
-    return "本地有未同步改动";
-  }
-  if (type === "no_base_diverged") {
-    return "首次同步且内容不一致";
-  }
-  if (type === "remote_deleted") {
-    return "远端文件被删除";
-  }
-  if (type === "remote_deleted_and_local_changed") {
-    return "远端被删除且本地有新改动";
-  }
-  return "检测到冲突";
+  return `[文件夹] ${sample.path}`;
 }
 
 function renderConflictPreview(error) {
@@ -304,14 +294,14 @@ function renderConflictPreview(error) {
     if (localSamples.length > 0) {
       lines.push("\n仅本地样例:");
       for (const item of localSamples) {
-        lines.push(`+ ${item}`);
+        lines.push(`+ ${formatDiffSample(item)}`);
       }
     }
 
     if (remoteSamples.length > 0) {
       lines.push("\n仅远端样例:");
       for (const item of remoteSamples) {
-        lines.push(`- ${item}`);
+        lines.push(`- ${formatDiffSample(item)}`);
       }
     }
   }
@@ -319,6 +309,8 @@ function renderConflictPreview(error) {
   box.textContent = lines.join("\n");
   box.classList.remove("hidden");
 }
+
+// ---- 摘要刷新 ----
 
 function formatTime(iso) {
   if (!iso) {
@@ -331,11 +323,18 @@ function formatTime(iso) {
   return d.toLocaleString();
 }
 
+function formatLastSyncProvider(lastSync) {
+  if (Array.isArray(lastSync.providers) && lastSync.providers.length > 0) {
+    return lastSync.providers.map((id) => getProviderLabel(id)).join("、");
+  }
+  return getProviderLabel(lastSync.provider || "-");
+}
+
 function formatLastSync(lastSync) {
   if (!lastSync) {
     return "无";
   }
-  const base = `${formatTime(lastSync.at)} (${lastSync.direction || "manual"}, ${lastSync.provider || "-"})`;
+  const base = `${formatTime(lastSync.at)} (${lastSync.direction || "manual"}, ${formatLastSyncProvider(lastSync)})`;
   if (lastSync.noop) {
     return `${base} [无变化]`;
   }
@@ -343,11 +342,6 @@ function formatLastSync(lastSync) {
     return `${base} [强制]`;
   }
   return base;
-}
-
-async function refreshLastSync() {
-  const lastSync = await sendMessage("getLastSync");
-  $("lastSync").textContent = `最近同步: ${formatLastSync(lastSync)}`;
 }
 
 function formatCount(value) {
@@ -361,40 +355,29 @@ function setCountNodeValue(node, valueText, tooltip = "") {
 
   node.textContent = valueText;
   const titleText = typeof tooltip === "string" ? tooltip.trim() : "";
+  const chip = node.closest(".count-chip");
+
   if (titleText) {
     node.title = titleText;
+    if (chip) {
+      chip.title = titleText;
+    }
   } else {
     node.removeAttribute("title");
   }
-
-  const chip = node.closest(".count-chip");
-  if (!chip) {
-    return;
-  }
-  if (titleText) {
-    chip.title = titleText;
-  } else {
-    chip.removeAttribute("title");
-  }
 }
 
-function toCompactRemoteStatus(message) {
-  const text = typeof message === "string" ? message.trim() : "";
-  if (!text) {
-    return "--";
-  }
+const REMOTE_STATUS_SHORT = {
+  [RemoteStatus.NOT_CONFIGURED]: "未配",
+  [RemoteStatus.NO_SNAPSHOT]: "暂无",
+  [RemoteStatus.ERROR]: "异常"
+};
 
-  if (text.includes("未配置")) {
-    return "未配";
-  }
-  if (text.includes("暂无快照")) {
-    return "暂无";
-  }
-  if (text.includes("超时")) {
-    return "超时";
-  }
-  return "异常";
-}
+const REMOTE_STATUS_TOOLTIP = {
+  [RemoteStatus.NOT_CONFIGURED]: "未配置",
+  [RemoteStatus.NO_SNAPSHOT]: "远端暂无快照",
+  [RemoteStatus.ERROR]: "获取失败"
+};
 
 function renderProviderBookmarkCount(provider, remoteData) {
   const node = $(`${provider}BookmarkCount`);
@@ -402,16 +385,17 @@ function renderProviderBookmarkCount(provider, remoteData) {
     return;
   }
 
-  const label = PROVIDER_LABELS[provider] || provider;
+  const label = getProviderLabel(provider);
 
-  if (Number.isFinite(remoteData?.bookmarks)) {
+  if (remoteData?.status === RemoteStatus.OK && Number.isFinite(remoteData?.bookmarks)) {
     setCountNodeValue(node, String(remoteData.bookmarks), `${label} 云端书签: ${remoteData.bookmarks} 条`);
     return;
   }
 
-  const shortStatus = toCompactRemoteStatus(remoteData?.message);
-  const tooltip = typeof remoteData?.message === "string" ? `${label}: ${remoteData.message}` : `${label}: 未知状态`;
-  setCountNodeValue(node, shortStatus, tooltip);
+  const status = remoteData?.status || RemoteStatus.ERROR;
+  const short = REMOTE_STATUS_SHORT[status] || "异常";
+  const detail = remoteData?.message ? `：${remoteData.message}` : "";
+  setCountNodeValue(node, short, `${label}: ${REMOTE_STATUS_TOOLTIP[status] || "未知状态"}${detail}`);
 }
 
 function renderBookmarkCounts(counts) {
@@ -420,31 +404,30 @@ function renderBookmarkCounts(counts) {
   setCountNodeValue(localNode, localValue, Number.isFinite(counts?.localBookmarks) ? `本地书签: ${counts.localBookmarks} 条` : "");
 
   const remotes = counts?.remotes || {};
-  for (const provider of Object.keys(PROVIDER_LABELS)) {
+  for (const provider of availableProviders) {
     renderProviderBookmarkCount(provider, remotes[provider] || null);
   }
 }
 
-async function refreshBookmarkCounts() {
-  return withCountRefresh(async () => {
-    const counts = await sendMessage("getBookmarkCounts");
-    renderBookmarkCounts(counts);
-    return counts;
-  });
-}
-
 async function refreshSyncSummary() {
   return withCountRefresh(async () => {
-    const [lastSync, counts] = await Promise.all([sendMessage("getLastSync"), sendMessage("getBookmarkCounts")]);
+    const [lastSync, counts] = await Promise.all([send(Actions.GET_LAST_SYNC), send(Actions.GET_BOOKMARK_COUNTS)]);
     $("lastSync").textContent = `最近同步: ${formatLastSync(lastSync)}`;
     renderBookmarkCounts(counts);
     return { lastSync, counts };
   });
 }
 
-function isConflictError(error) {
-  return error?.code === "SYNC_CONFLICT";
+async function refreshUiState() {
+  try {
+    const state = await send(Actions.GET_SYNC_UI_STATE);
+    setSyncDot(state?.pendingChangePush ? "pending" : "idle");
+  } catch {
+    setSyncDot("idle");
+  }
 }
+
+// ---- 推送 / 拉取 ----
 
 function buildConflictMessage(error, suffix) {
   const summary = error?.details?.summary || error?.message || "检测到冲突";
@@ -452,7 +435,7 @@ function buildConflictMessage(error, suffix) {
 }
 
 function formatProviderCountDelta(provider, beforeCounts, afterCounts) {
-  const label = PROVIDER_LABELS[provider] || provider;
+  const label = getProviderLabel(provider);
   const before = beforeCounts?.remotes?.[provider]?.bookmarks;
   const after = afterCounts?.remotes?.[provider]?.bookmarks;
   if (!Number.isFinite(before) || !Number.isFinite(after)) {
@@ -471,7 +454,7 @@ function buildPushSuccessMessage({ pushAll, provider, force, result, beforeCount
     return force ? `强制推送到所有平台完成（${parts.join("；")}）` : `已推送到所有平台（${parts.join("；")}）`;
   }
 
-  const label = PROVIDER_LABELS[provider] || provider;
+  const label = getProviderLabel(provider);
   if (result?.noop) {
     return `${label} 已同步，无需推送`;
   }
@@ -480,42 +463,49 @@ function buildPushSuccessMessage({ pushAll, provider, force, result, beforeCount
   return force ? `${label} 强制推送完成（${delta}）` : `${label} 推送完成（${delta}）`;
 }
 
+async function persistTargetSettings() {
+  const provider = getDefaultProvider();
+  const pushAll = isPushAllMode();
+  const latestConfig = await send(Actions.GET_CONFIG);
+
+  const changed = latestConfig.provider !== provider || Boolean(latestConfig.syncAllProviders) !== pushAll;
+  if (!changed) {
+    currentConfig = latestConfig;
+    return;
+  }
+
+  const nextConfig = {
+    ...latestConfig,
+    provider: provider || latestConfig.provider,
+    syncAllProviders: pushAll
+  };
+  currentConfig = await send(Actions.SAVE_CONFIG, { config: nextConfig });
+}
+
 async function onPush() {
   if (availableProviders.length === 0) {
     throw new Error(NO_PROVIDER_MESSAGE);
   }
 
   const pushAll = isPushAllMode();
-  const provider = getSelectedProvider("pushProvider");
+  const provider = getDefaultProvider();
   if (!pushAll && !provider) {
     throw new Error("未找到可用推送平台，请先在设置完成至少一个平台配置");
   }
 
-  await persistPushTargetMode();
+  await persistTargetSettings();
 
   clearConflictPreview();
-  const beforeCounts = await sendMessage("getBookmarkCounts");
-  if (pushAll) {
-    setStatus("正在推送到所有已配置平台...");
-  } else {
-    setStatus(`正在推送到 ${PROVIDER_LABELS[provider] || provider}...`);
-  }
+  const beforeCounts = await send(Actions.GET_BOOKMARK_COUNTS);
+  setStatus(pushAll ? "正在推送到所有已配置平台..." : `正在推送到 ${getProviderLabel(provider)}...`);
 
   const payload = pushAll ? { syncAllProviders: true } : { provider, syncAllProviders: false };
 
   try {
-    const result = await sendMessage("pushToRemote", payload);
+    const result = await send(Actions.PUSH_TO_REMOTE, payload);
     const { counts: afterCounts } = await refreshSyncSummary();
-    setStatus(
-      buildPushSuccessMessage({
-        pushAll,
-        provider,
-        force: false,
-        result,
-        beforeCounts,
-        afterCounts
-      })
-    );
+    setStatus(buildPushSuccessMessage({ pushAll, provider, force: false, result, beforeCounts, afterCounts }));
+    setSyncDot("idle");
   } catch (error) {
     if (!isConflictError(error)) {
       throw error;
@@ -529,23 +519,12 @@ async function onPush() {
     }
 
     setStatus(pushAll ? "正在强制推送到所有平台..." : "正在强制推送...");
-    const result = await sendMessage("pushToRemote", {
-      ...payload,
-      force: true
-    });
+    const result = await send(Actions.PUSH_TO_REMOTE, { ...payload, force: true });
     clearConflictPreview();
 
     const { counts: afterCounts } = await refreshSyncSummary();
-    setStatus(
-      buildPushSuccessMessage({
-        pushAll,
-        provider,
-        force: true,
-        result,
-        beforeCounts,
-        afterCounts
-      })
-    );
+    setStatus(buildPushSuccessMessage({ pushAll, provider, force: true, result, beforeCounts, afterCounts }));
+    setSyncDot("idle");
   }
 }
 
@@ -554,17 +533,20 @@ async function onPull() {
     throw new Error(NO_PROVIDER_MESSAGE);
   }
 
-  const provider = getSelectedProvider("pullProvider");
+  const provider = getDefaultProvider();
   if (!provider) {
     throw new Error("未找到可用拉取平台，请先在设置完成至少一个平台配置");
   }
 
+  await persistTargetSettings();
+
   clearConflictPreview();
-  setStatus(`正在从 ${PROVIDER_LABELS[provider] || provider} 拉取并导入...`);
+  setStatus(`正在从 ${getProviderLabel(provider)} 拉取并导入...`);
   try {
-    const result = await sendMessage("pullFromRemote", { provider });
+    const result = await send(Actions.PULL_FROM_REMOTE, { provider });
     setStatus(result?.noop ? "已是最新，无需覆盖" : "拉取并导入完成");
     await refreshSyncSummary();
+    setSyncDot("idle");
   } catch (error) {
     if (!isConflictError(error)) {
       throw error;
@@ -578,27 +560,31 @@ async function onPull() {
     }
 
     setStatus("正在强制拉取...");
-    const result = await sendMessage("pullFromRemote", { force: true, provider });
+    const result = await send(Actions.PULL_FROM_REMOTE, { force: true, provider });
     clearConflictPreview();
     setStatus(result?.noop ? "已是最新，无需覆盖" : "强制拉取完成");
     await refreshSyncSummary();
+    setSyncDot("idle");
   }
 }
 
-function onPushTargetChanged() {
-  syncPushModeUi();
+function onTargetChanged() {
+  updateTargetHints();
+  updateHistoryLink();
   run(async () => {
-    await persistPushTargetMode();
-    setStatus("推送目标已保存");
+    await persistTargetSettings();
+    setStatus("同步目标已保存");
   });
 }
+
+// ---- 事件绑定与启动 ----
 
 function bindEvents() {
   $("pushBtn").addEventListener("click", () => run(onPush));
   $("pullBtn").addEventListener("click", () => run(onPull));
   $("optionsBtn").addEventListener("click", () => chrome.runtime.openOptionsPage());
-  $("pushTargetCurrent").addEventListener("change", onPushTargetChanged);
-  $("pushTargetAll").addEventListener("change", onPushTargetChanged);
+  $("defaultProvider").addEventListener("change", onTargetChanged);
+  $("pushAllChk").addEventListener("change", onTargetChanged);
   window.addEventListener("focus", triggerEntryRefresh);
   window.addEventListener("pageshow", triggerEntryRefresh);
   document.addEventListener("visibilitychange", triggerEntryRefresh);
@@ -628,6 +614,7 @@ async function init() {
   await run(async () => {
     await loadSyncControls();
   });
+  await refreshUiState();
   await run(async () => {
     await refreshSyncSummary();
   });
