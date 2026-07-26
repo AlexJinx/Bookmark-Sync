@@ -28,6 +28,7 @@ html,
 body {
   margin: 0;
   overflow: hidden;
+  scrollbar-width: none;
   border-radius: 0;
   background:
     radial-gradient(130% 95% at -10% -25%, rgba(236, 91, 19, 0.2) 0%, transparent 64%),
@@ -36,6 +37,12 @@ body {
 
 body {
   padding: 6px;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .panel {
@@ -118,6 +125,70 @@ body {
   background: linear-gradient(180deg, #ffffff, #fff8f2);
   font-size: 12px;
   color: #4f5d72;
+}
+
+.count-refresh {
+  margin: 0 0 11px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, #ffffff, #f9fbff);
+  color: #526173;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.count-refresh-spinner {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid #d7e1ed;
+  border-top-color: #e05010;
+  animation: count-spin 700ms linear infinite;
+}
+
+.counts {
+  margin: 0 0 11px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, #ffffff, #f9fbff);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.count-chip {
+  margin: 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: linear-gradient(180deg, #ffffff, #f7fafd);
+}
+
+.count-tag {
+  font-size: 10px;
+  font-weight: 800;
+  color: #6b7789;
+  letter-spacing: 0.3px;
+}
+
+.count-value {
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 800;
+  color: #3f4958;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .section {
@@ -350,6 +421,13 @@ button:focus-visible {
   white-space: pre-wrap;
   max-height: 200px;
   overflow: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.conflict::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .status {
@@ -390,5 +468,11 @@ button:focus-visible {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes count-spin {
+  to {
+    transform: rotate(360deg);
   }
 }

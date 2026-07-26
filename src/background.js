@@ -154,6 +154,33 @@ async function getLocalSnapshotAndHash() {
   return { snapshot, localHash };
 }
 
+function countBookmarkNodes(nodes) {
+  let count = 0;
+  for (const node of nodes || []) {
+    if (!node || typeof node !== "object") {
+      continue;
+    }
+
+    if (node.type === "bookmark") {
+      count += 1;
+      continue;
+    }
+
+    if (Array.isArray(node.children)) {
+      count += countBookmarkNodes(node.children);
+    }
+  }
+  return count;
+}
+
+function countSnapshotBookmarks(snapshot) {
+  let total = 0;
+  for (const root of snapshot?.roots || []) {
+    total += countBookmarkNodes(root?.children || []);
+  }
+  return total;
+}
+
 async function getRemoteSnapshotAndHash(remote) {
   if (!remote.exists) {
     throw new Error("远端文件不存在，请先执行一次推送");
@@ -283,6 +310,29 @@ function ensurePullNoConflict({ force, syncState, remote, localHash, remoteHash,
   }
 }
 
+function isRemoteShaConflictError(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  if (!message.includes("409")) {
+    return false;
+  }
+  return message.includes("does not match") || message.includes("sha");
+}
+
+function buildPushResult(config, { fileSha, commitSha = "", localHash, force = false, noop = false }) {
+  return {
+    lastSync: {
+      at: new Date().toISOString(),
+      direction: "push",
+      provider: config.provider,
+      fileSha,
+      commitSha,
+      noop: Boolean(noop),
+      force: Boolean(force)
+    },
+    nextSyncState: makeSyncState(config, fileSha, localHash)
+  };
+}
+
 async function pushToRemoteForConfig(config, { force = false, local, syncStateStore } = {}) {
   const client = createProviderClient(config);
   const localSnapshot = local || (await getLocalSnapshotAndHash());
@@ -308,33 +358,86 @@ async function pushToRemoteForConfig(config, { force = false, local, syncStateSt
   });
 
   if (remote.exists && remoteHash === localSnapshot.localHash) {
-    return {
-      lastSync: {
-        at: new Date().toISOString(),
-        direction: "push",
-        provider: config.provider,
-        fileSha: remote.sha,
-        commitSha: "",
-        noop: true
-      },
-      nextSyncState: makeSyncState(config, remote.sha, localSnapshot.localHash)
-    };
+    return buildPushResult(config, {
+      fileSha: remote.sha,
+      localHash: localSnapshot.localHash,
+      noop: true,
+      force
+    });
   }
 
   const payload = JSON.stringify(localSnapshot.snapshot, null, 2);
-  const result = await client.updateRemoteFile(payload, remote.sha);
-
-  return {
-    lastSync: {
-      at: new Date().toISOString(),
-      direction: "push",
-      provider: config.provider,
+  const finalizePushResult = (result, forceValue) =>
+    buildPushResult(config, {
       fileSha: result.fileSha,
       commitSha: result.commitSha,
-      force: Boolean(force)
-    },
-    nextSyncState: makeSyncState(config, result.fileSha, localSnapshot.localHash)
-  };
+      localHash: localSnapshot.localHash,
+      force: forceValue
+    });
+
+  try {
+    const result = await client.updateRemoteFile(payload, remote.sha);
+    return finalizePushResult(result, force);
+  } catch (error) {
+    if (!isRemoteShaConflictError(error)) {
+      throw error;
+    }
+
+    const latestRemote = await client.getRemoteFile();
+    if (!latestRemote.exists) {
+      if (!force) {
+        throwConflict("检测到冲突：远端文件在推送过程中被删除。", {
+          operation: "push",
+          type: "remote_deleted_during_update"
+        });
+      }
+
+      try {
+        const retryCreateResult = await client.updateRemoteFile(payload, null);
+        return finalizePushResult(retryCreateResult, true);
+      } catch (retryError) {
+        if (isRemoteShaConflictError(retryError)) {
+          throw new Error("远端文件正在被频繁更新，强制推送失败。请先暂停其他设备同步后重试。");
+        }
+        throw retryError;
+      }
+    }
+
+    const latestRemoteSnapshot = parseSnapshotText(latestRemote.contentText || "");
+    const latestRemoteHash = await hashSnapshot(latestRemoteSnapshot);
+
+    if (!force) {
+      throwConflict("检测到冲突：远端在推送提交时已更新，请先拉取再推送。", {
+        ...withPreview(
+          {
+            operation: "push",
+            type: "remote_changed"
+          },
+          localSnapshot.snapshot,
+          latestRemoteSnapshot
+        )
+      });
+    }
+
+    if (latestRemoteHash === localSnapshot.localHash) {
+      return buildPushResult(config, {
+        fileSha: latestRemote.sha,
+        localHash: localSnapshot.localHash,
+        noop: true,
+        force: true
+      });
+    }
+
+    try {
+      const retryResult = await client.updateRemoteFile(payload, latestRemote.sha);
+      return finalizePushResult(retryResult, true);
+    } catch (retryError) {
+      if (isRemoteShaConflictError(retryError)) {
+        throw new Error("远端文件正在被频繁更新，强制推送失败。请先暂停其他设备同步后重试。");
+      }
+      throw retryError;
+    }
+  }
 }
 
 function buildMultiProviderLastSync(results, force) {
@@ -456,6 +559,70 @@ async function pullFromRemote({ force = false, provider = "" } = {}) {
   return lastSync;
 }
 
+async function getRemoteBookmarkCount(config, provider) {
+  if (!PROVIDER_KEYS.includes(provider)) {
+    throw new Error(`未知 provider: ${provider}`);
+  }
+
+  if (!isProviderConfigured(config, provider)) {
+    return {
+      provider,
+      configured: false,
+      exists: false,
+      bookmarks: null,
+      message: "未配置"
+    };
+  }
+
+  try {
+    const client = createProviderClient(withProvider(config, provider));
+    const remoteFile = await client.getRemoteFile();
+
+    if (!remoteFile.exists) {
+      return {
+        provider,
+        configured: true,
+        exists: false,
+        bookmarks: null,
+        message: "远端暂无快照"
+      };
+    }
+
+    const remoteSnapshot = parseSnapshotText(remoteFile.contentText || "");
+    return {
+      provider,
+      configured: true,
+      exists: true,
+      bookmarks: countSnapshotBookmarks(remoteSnapshot),
+      message: ""
+    };
+  } catch (error) {
+    return {
+      provider,
+      configured: true,
+      exists: null,
+      bookmarks: null,
+      message: error.message || String(error)
+    };
+  }
+}
+
+async function getBookmarkCounts() {
+  const [config, localSnapshot] = await Promise.all([getConfig(), exportSnapshot()]);
+  const localBookmarks = countSnapshotBookmarks(localSnapshot);
+
+  const remotes = {};
+  const results = await Promise.all(PROVIDER_KEYS.map((provider) => getRemoteBookmarkCount(config, provider)));
+  for (const item of results) {
+    remotes[item.provider] = item;
+  }
+
+  return {
+    localBookmarks,
+    remotes
+  };
+}
+
 async function handleMessage(message) {
   switch (message?.action) {
     case "getConfig":
@@ -476,6 +643,8 @@ async function handleMessage(message) {
       return exportSnapshot();
     case "importLocal":
       return importSnapshot(message.snapshot);
+    case "getBookmarkCounts":
+      return getBookmarkCounts();
     case "pushToRemote":
       return pushToRemote({
         force: Boolean(message.force),

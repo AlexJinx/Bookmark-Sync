@@ -42,12 +42,15 @@
 
 - GitHub / Gitee 双平台
 - 两个平台可分别配置，并在弹窗按需选择推送/拉取来源
+- 首次推送可自动创建远端快照文件，无需手动预建 `snapshot.json`
 - 推送目标支持：
 - 当前平台
 - 同时推送到所有已配置平台
 - 自动定时推送（最小 15 分钟）
 - 冲突检测、差异预览、手动确认后强制同步
 - 设置页支持“配置导出 / 配置导入”（包含 Token 与自动同步参数）
+- 弹窗显示本地书签数量，以及 GitHub / Gitee 各自的云端书签数量
+- 导入/导出仅处理浏览器标准书签根节点，不修改 Edge 的 `workspace folder`
 
 边界说明：
 
@@ -120,11 +123,19 @@
 
 说明：书签备份与配置迁移统一在设置页完成，不再放在弹窗。
 
+### 数量展示
+
+- 弹窗会实时显示：
+- 本地书签数量
+- GitHub 云端书签数量
+- Gitee 云端书签数量
+
 ### 拉取平台
 
 - 下拉框只显示“已完成配置”的平台
 - 拉取时会从选中的平台读取并覆盖本地
 - 拉取不支持“同时多平台”
+- 拉取导入只会覆盖标准书签根节点内容，不会操作 Edge 工作区目录
 
 ### 推送平台
 
@@ -166,6 +177,11 @@
 
 如果远端还没有快照文件，请先推送一次创建快照。
 
+补充：
+
+- GitHub / Gitee 首次推送到 `bookmarks/snapshot.json` 时，插件会自动创建远端文件
+- 不需要手动创建空 JSON 文件，也不要预先写入随意内容
+
 ---
 
 ## 冲突处理
@@ -205,10 +221,19 @@
 
 关键权限：
 
-1. `Repository access` 选 `Only select repositories`
-2. 选择目标仓库
-3. `Contents` 权限设为 `Read and write`
-4. 生成后复制 Token（仅显示一次）
+1. `Resource owner` 选择当前仓库所属账号
+2. `Repository access` 选 `Only select repositories`
+3. 选择目标仓库
+4. 在 `Repository permissions` 区域点击 `Add permissions`
+5. 添加 `Metadata` 权限并设为 `Read-only`
+6. 添加 `Contents` 权限并设为 `Read and write`
+7. 生成后复制 Token（仅显示一次）
+
+注意：
+
+- 如果没有先点击 `Add permissions`，下面的权限项不会真正加入 Token
+- 漏掉 `Metadata` 或 `Contents`，测试连接/读写文件时可能出现 `401` 或 `403`
+- 在插件里请直接粘贴原始 Token，不要带 `Bearer` 或 `token` 前缀
 
 ### 3. 在设置页填写并测试
 
@@ -249,7 +274,10 @@
 | 推送平台下拉消失 | 选择了“全部已配置平台” | 这是正常行为，改回“当前平台”即可显示 |
 | 输入 11 分钟后变成 15 | 最小间隔限制生效 | 正常行为，系统会自动调整并提示 |
 | 远端文件不存在 | 先拉取但远端尚无快照 | 先执行一次推送 |
+| Gitee 首次推送时报远端 JSON 非法或目录错误 | 远端快照文件尚未建立，或 Gitee 返回格式与 GitHub 不同 | 升级到当前版本后直接推送，插件会自动创建 `bookmarks/snapshot.json` |
 | 401 / 403 | Token 无效或权限不足 | 重新生成 Token 并确认仓库读写权限 |
+| GitHub Fine-grained Token 明明建了还是 401 | 忘记在 `Repository permissions` 里点击 `Add permissions`，或没把 `Metadata` / `Contents` 真正加进去 | 重新编辑 Token，点击 `Add permissions` 后添加 `Metadata: Read-only` 和 `Contents: Read and write` |
+| 拉取时报 `Can't modify workspace folder` | Edge 的工作区目录不允许扩展修改 | 升级到当前版本，插件会自动跳过非标准根节点，仅同步书签栏/其他书签/移动设备 |
 | 冲突频繁 | 多设备并发改动 | 采用“先拉取再修改，改完立即推送” |
 | 卸载扩展后重装，配置不见了 | 扩展使用 `chrome.storage.local` 保存配置 | 卸载通常会清空该存储，重装前请导出备份并保存配置参数 |
 
@@ -266,6 +294,29 @@
 ---
 
 ## 版本更新
+
+### 0.1.7（2026-04-08）
+
+- 修复 GitHub / Gitee Token 输入前缀导致的认证失败问题，自动清洗 `Bearer` / `token` 前缀
+- 优化 GitHub / Gitee 401 提示信息，补充更明确的排查指引
+- 修复 Gitee 首次推送时远端快照文件不存在的兼容性问题，首次推送可自动创建 `bookmarks/snapshot.json`
+- 修复 Gitee 路径判定过严导致的误报，避免将首次推送场景误判为目录错误
+- 修复 Edge 拉取导入时误操作 `workspace folder` 导致导入/回滚同时失败的问题
+- README 补充 GitHub `Add permissions`、Gitee 首次推送与 Edge 工作区限制说明
+- 扩展版本号更新为 `0.1.7`
+
+---
+
+### 0.1.5（2026-03-12）
+
+- 弹窗新增本地书签数量、GitHub 云端书签数量、Gitee 云端书签数量展示
+- 云端数量改为同时统计双平台，不再依赖当前拉取平台切换
+- 书签数量展示区改为紧凑卡片样式，并将云端异常状态压缩为短标签
+- 弹窗隐藏滚动条，保留核心交互区域可用性
+- 设置页 Token 可见性按钮优化为纯图标样式
+- 扩展版本号更新为 `0.1.5`
+
+---
 
 ### 0.1.3（2026-03-06）
 

@@ -156,9 +156,15 @@ function toBoolean(value, fallback = false) {
   return fallback;
 }
 
+function normalizeTokenInput(value) {
+  return toTrimmedString(value)
+    .replace(/^(?:bearer|token)\s+/i, "")
+    .replace(/\s+/g, "");
+}
+
 function readScopedInputs() {
   return {
-    token: fields.token.value.trim(),
+    token: normalizeTokenInput(fields.token.value),
     owner: fields.owner.value.trim(),
     repo: fields.repo.value.trim(),
     branch: fields.branch.value.trim(),

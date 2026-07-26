@@ -23,6 +23,10 @@ const NO_PROVIDER_MESSAGE = "未检测到已配置平台，请先打开设置完
 let isRunning = false;
 let availableProviders = [];
 let currentConfig = null;
+let refreshCountPending = 0;
+let readyForEntryRefresh = false;
+let lastEntryRefreshAt = 0;
+const ENTRY_REFRESH_DEBOUNCE_MS = 500;
 
 async function sendMessage(action, extra = {}) {
   const response = await chrome.runtime.sendMessage({ action, ...extra });
@@ -48,6 +52,61 @@ function setStatus(message, isError = false) {
   status.textContent = text;
   status.style.color = isError ? "#b42318" : "#1a1e24";
   status.classList.remove("hidden");
+}
+
+function setCountRefreshUiLoading(isLoading) {
+  const indicator = $("countRefreshIndicator");
+  const counts = $("counts");
+  if (!indicator || !counts) {
+    return;
+  }
+  indicator.classList.toggle("hidden", !isLoading);
+  counts.classList.toggle("hidden", isLoading);
+}
+
+function beginCountRefresh() {
+  refreshCountPending += 1;
+  setCountRefreshUiLoading(true);
+}
+
+function endCountRefresh() {
+  refreshCountPending = Math.max(0, refreshCountPending - 1);
+  if (refreshCountPending === 0) {
+    setCountRefreshUiLoading(false);
+  }
+}
+
+async function withCountRefresh(task) {
+  beginCountRefresh();
+  try {
+    return await task();
+  } finally {
+    endCountRefresh();
+  }
+}
+
+function shouldRunEntryRefresh() {
+  const now = Date.now();
+  if (now - lastEntryRefreshAt < ENTRY_REFRESH_DEBOUNCE_MS) {
+    return false;
+  }
+  lastEntryRefreshAt = now;
+  return true;
+}
+
+function triggerEntryRefresh() {
+  if (!readyForEntryRefresh) {
+    return;
+  }
+  if (document.visibilityState !== "visible") {
+    return;
+  }
+  if (!shouldRunEntryRefresh()) {
+    return;
+  }
+  run(async () => {
+    await refreshSyncSummary();
+  });
 }
 
 function isPushAllMode() {
@@ -291,6 +350,98 @@ async function refreshLastSync() {
   $("lastSync").textContent = `最近同步: ${formatLastSync(lastSync)}`;
 }
 
+function formatCount(value) {
+  return Number.isFinite(value) ? String(value) : "--";
+}
+
+function setCountNodeValue(node, valueText, tooltip = "") {
+  if (!node) {
+    return;
+  }
+
+  node.textContent = valueText;
+  const titleText = typeof tooltip === "string" ? tooltip.trim() : "";
+  if (titleText) {
+    node.title = titleText;
+  } else {
+    node.removeAttribute("title");
+  }
+
+  const chip = node.closest(".count-chip");
+  if (!chip) {
+    return;
+  }
+  if (titleText) {
+    chip.title = titleText;
+  } else {
+    chip.removeAttribute("title");
+  }
+}
+
+function toCompactRemoteStatus(message) {
+  const text = typeof message === "string" ? message.trim() : "";
+  if (!text) {
+    return "--";
+  }
+
+  if (text.includes("未配置")) {
+    return "未配";
+  }
+  if (text.includes("暂无快照")) {
+    return "暂无";
+  }
+  if (text.includes("超时")) {
+    return "超时";
+  }
+  return "异常";
+}
+
+function renderProviderBookmarkCount(provider, remoteData) {
+  const node = $(`${provider}BookmarkCount`);
+  if (!node) {
+    return;
+  }
+
+  const label = PROVIDER_LABELS[provider] || provider;
+
+  if (Number.isFinite(remoteData?.bookmarks)) {
+    setCountNodeValue(node, String(remoteData.bookmarks), `${label} 云端书签: ${remoteData.bookmarks} 条`);
+    return;
+  }
+
+  const shortStatus = toCompactRemoteStatus(remoteData?.message);
+  const tooltip = typeof remoteData?.message === "string" ? `${label}: ${remoteData.message}` : `${label}: 未知状态`;
+  setCountNodeValue(node, shortStatus, tooltip);
+}
+
+function renderBookmarkCounts(counts) {
+  const localNode = $("localBookmarkCount");
+  const localValue = formatCount(counts?.localBookmarks);
+  setCountNodeValue(localNode, localValue, Number.isFinite(counts?.localBookmarks) ? `本地书签: ${counts.localBookmarks} 条` : "");
+
+  const remotes = counts?.remotes || {};
+  for (const provider of Object.keys(PROVIDER_LABELS)) {
+    renderProviderBookmarkCount(provider, remotes[provider] || null);
+  }
+}
+
+async function refreshBookmarkCounts() {
+  return withCountRefresh(async () => {
+    const counts = await sendMessage("getBookmarkCounts");
+    renderBookmarkCounts(counts);
+    return counts;
+  });
+}
+
+async function refreshSyncSummary() {
+  return withCountRefresh(async () => {
+    const [lastSync, counts] = await Promise.all([sendMessage("getLastSync"), sendMessage("getBookmarkCounts")]);
+    $("lastSync").textContent = `最近同步: ${formatLastSync(lastSync)}`;
+    renderBookmarkCounts(counts);
+    return { lastSync, counts };
+  });
+}
+
 function isConflictError(error) {
   return error?.code === "SYNC_CONFLICT";
 }
@@ -298,6 +449,35 @@ function isConflictError(error) {
 function buildConflictMessage(error, suffix) {
   const summary = error?.details?.summary || error?.message || "检测到冲突";
   return `${summary}\n\n已在下方显示差异预览。\n${suffix}`;
+}
+
+function formatProviderCountDelta(provider, beforeCounts, afterCounts) {
+  const label = PROVIDER_LABELS[provider] || provider;
+  const before = beforeCounts?.remotes?.[provider]?.bookmarks;
+  const after = afterCounts?.remotes?.[provider]?.bookmarks;
+  if (!Number.isFinite(before) || !Number.isFinite(after)) {
+    return `${label} 书签数已刷新`;
+  }
+  return `${label} 书签数 ${before} -> ${after}`;
+}
+
+function buildPushSuccessMessage({ pushAll, provider, force, result, beforeCounts, afterCounts }) {
+  if (pushAll) {
+    if (result?.noop) {
+      return "所有平台均已同步，无需推送";
+    }
+
+    const parts = availableProviders.map((item) => formatProviderCountDelta(item, beforeCounts, afterCounts));
+    return force ? `强制推送到所有平台完成（${parts.join("；")}）` : `已推送到所有平台（${parts.join("；")}）`;
+  }
+
+  const label = PROVIDER_LABELS[provider] || provider;
+  if (result?.noop) {
+    return `${label} 已同步，无需推送`;
+  }
+
+  const delta = formatProviderCountDelta(provider, beforeCounts, afterCounts);
+  return force ? `${label} 强制推送完成（${delta}）` : `${label} 推送完成（${delta}）`;
 }
 
 async function onPush() {
@@ -314,6 +494,7 @@ async function onPush() {
   await persistPushTargetMode();
 
   clearConflictPreview();
+  const beforeCounts = await sendMessage("getBookmarkCounts");
   if (pushAll) {
     setStatus("正在推送到所有已配置平台...");
   } else {
@@ -324,12 +505,17 @@ async function onPush() {
 
   try {
     const result = await sendMessage("pushToRemote", payload);
-    if (pushAll) {
-      setStatus(result?.noop ? "所有平台均已同步，无需推送" : "已推送到所有已配置平台");
-    } else {
-      setStatus(result?.noop ? "已同步，无需推送" : "推送完成");
-    }
-    await refreshLastSync();
+    const { counts: afterCounts } = await refreshSyncSummary();
+    setStatus(
+      buildPushSuccessMessage({
+        pushAll,
+        provider,
+        force: false,
+        result,
+        beforeCounts,
+        afterCounts
+      })
+    );
   } catch (error) {
     if (!isConflictError(error)) {
       throw error;
@@ -349,12 +535,17 @@ async function onPush() {
     });
     clearConflictPreview();
 
-    if (pushAll) {
-      setStatus(result?.noop ? "所有平台均已同步，无需推送" : "强制推送到所有平台完成");
-    } else {
-      setStatus(result?.noop ? "已同步，无需推送" : "强制推送完成");
-    }
-    await refreshLastSync();
+    const { counts: afterCounts } = await refreshSyncSummary();
+    setStatus(
+      buildPushSuccessMessage({
+        pushAll,
+        provider,
+        force: true,
+        result,
+        beforeCounts,
+        afterCounts
+      })
+    );
   }
 }
 
@@ -373,7 +564,7 @@ async function onPull() {
   try {
     const result = await sendMessage("pullFromRemote", { provider });
     setStatus(result?.noop ? "已是最新，无需覆盖" : "拉取并导入完成");
-    await refreshLastSync();
+    await refreshSyncSummary();
   } catch (error) {
     if (!isConflictError(error)) {
       throw error;
@@ -390,7 +581,7 @@ async function onPull() {
     const result = await sendMessage("pullFromRemote", { force: true, provider });
     clearConflictPreview();
     setStatus(result?.noop ? "已是最新，无需覆盖" : "强制拉取完成");
-    await refreshLastSync();
+    await refreshSyncSummary();
   }
 }
 
@@ -408,6 +599,9 @@ function bindEvents() {
   $("optionsBtn").addEventListener("click", () => chrome.runtime.openOptionsPage());
   $("pushTargetCurrent").addEventListener("change", onPushTargetChanged);
   $("pushTargetAll").addEventListener("change", onPushTargetChanged);
+  window.addEventListener("focus", triggerEntryRefresh);
+  window.addEventListener("pageshow", triggerEntryRefresh);
+  document.addEventListener("visibilitychange", triggerEntryRefresh);
 }
 
 async function run(fn) {
@@ -432,8 +626,12 @@ async function init() {
   bindEvents();
   clearConflictPreview();
   await run(async () => {
-    await Promise.all([loadSyncControls(), refreshLastSync()]);
+    await loadSyncControls();
   });
+  await run(async () => {
+    await refreshSyncSummary();
+  });
+  readyForEntryRefresh = true;
 }
 
 init();

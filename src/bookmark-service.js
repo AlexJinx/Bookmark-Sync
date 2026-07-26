@@ -4,6 +4,10 @@
   "3": "mobile"
 };
 
+function isSyncableRoot(node) {
+  return Boolean(node && ROOT_KEYS[node.id]);
+}
+
 function getRootKey(node) {
   return ROOT_KEYS[node.id] || `custom:${node.title}`;
 }
@@ -202,7 +206,7 @@ async function createNode(parentId, node) {
 async function applySnapshot(snapshot) {
   const tree = await getTree();
   const root = tree[0];
-  const currentRoots = root.children || [];
+  const currentRoots = (root.children || []).filter(isSyncableRoot);
   const mapByKey = new Map(currentRoots.map((node) => [getRootKey(node), node]));
 
   for (const sourceRoot of snapshot.roots) {
@@ -230,7 +234,7 @@ async function applySnapshot(snapshot) {
 export async function exportSnapshot() {
   const tree = await getTree();
   const root = tree[0];
-  const roots = (root.children || []).map((node) => ({
+  const roots = (root.children || []).filter(isSyncableRoot).map((node) => ({
     key: getRootKey(node),
     title: node.title,
     children: (node.children || []).map(toSnapshotNode)

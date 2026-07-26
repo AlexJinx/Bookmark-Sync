@@ -12,6 +12,13 @@ function encodePath(path) {
     .join("/");
 }
 
+function normalizeAuthToken(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^(?:bearer|token)\s+/i, "")
+    .replace(/\s+/g, "");
+}
+
 function toBase64(text) {
   const bytes = new TextEncoder().encode(text);
   const chunk = 0x8000;
@@ -31,15 +38,60 @@ function fromBase64(base64Text) {
   return new TextDecoder().decode(bytes);
 }
 
-async function parseError(response) {
+function buildAuthErrorMessage(provider, details) {
+  const message = details || "Bad credentials";
+  if (provider === "github") {
+    return `GitHub 认证失败(401): ${message}。请确认填写的是原始 Token，不要包含 Bearer/token 前缀、引号或换行，并检查该 Token 是否已过期或被撤销。`;
+  }
+  if (provider === "gitee") {
+    return `Gitee 认证失败(401): ${message}。请确认填写的是原始 Token，不要包含 Bearer/token 前缀、引号或换行，并检查该 Token 是否仍然有效。`;
+  }
+  return `认证失败(401): ${message}`;
+}
+
+function extractErrorDetails(payload, fallback = "") {
+  if (payload && typeof payload === "object") {
+    const message = payload.message || payload.error;
+    if (typeof message === "string" && message.trim()) {
+      return message.trim();
+    }
+    try {
+      return JSON.stringify(payload);
+    } catch {
+      return fallback;
+    }
+  }
+  if (typeof payload === "string" && payload.trim()) {
+    return payload.trim();
+  }
+  return fallback;
+}
+
+function buildRequestErrorMessage(status, details, provider = "") {
+  if (status === 401) {
+    return buildAuthErrorMessage(provider, details);
+  }
+  return `请求失败(${status}): ${details}`;
+}
+
+function isRemoteFileMissing(details) {
+  const text = String(details || "").toLowerCase();
+  return text.includes("not found") || text.includes("404") || text.includes("不存在");
+}
+
+function isExplicitDirectoryPath(path) {
+  return /[\\/]$/.test(String(path || "").trim());
+}
+
+async function parseError(response, provider = "") {
   let details = "";
   try {
     const json = await response.json();
-    details = json.message || json.error || JSON.stringify(json);
+    details = extractErrorDetails(json, response.statusText);
   } catch {
     details = response.statusText;
   }
-  return `请求失败(${response.status}): ${details}`;
+  return buildRequestErrorMessage(response.status, details, provider);
 }
 
 class GitHubProvider {
@@ -58,8 +110,9 @@ class GitHubProvider {
   }
 
   get headers() {
+    const token = normalizeAuthToken(this.config.token);
     return {
-      Authorization: `Bearer ${this.config.token}`,
+      Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github+json",
       "Content-Type": "application/json"
     };
@@ -68,9 +121,9 @@ class GitHubProvider {
   async testConnection() {
     const { owner, repo } = this.config;
     const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
-    const response = await fetch(url, { headers: this.headers });
+    const response = await fetch(url, { headers: this.headers, cache: "no-store" });
     if (!response.ok) {
-      throw new Error(await parseError(response));
+      throw new Error(await parseError(response, "github"));
     }
     const json = await response.json();
     return {
@@ -83,7 +136,7 @@ class GitHubProvider {
 
   async getRemoteFile() {
     const url = `${this.contentUrl}?ref=${encodeURIComponent(this.config.branch)}`;
-    const response = await fetch(url, { headers: this.headers });
+    const response = await fetch(url, { headers: this.headers, cache: "no-store" });
     if (response.status === 404) {
       return {
         exists: false,
@@ -92,7 +145,7 @@ class GitHubProvider {
       };
     }
     if (!response.ok) {
-      throw new Error(await parseError(response));
+      throw new Error(await parseError(response, "github"));
     }
     const json = await response.json();
     return {
@@ -116,10 +169,11 @@ class GitHubProvider {
     const response = await fetch(this.contentUrl, {
       method: "PUT",
       headers: this.headers,
+      cache: "no-store",
       body: JSON.stringify(body)
     });
     if (!response.ok) {
-      throw new Error(await parseError(response));
+      throw new Error(await parseError(response, "github"));
     }
     const json = await response.json();
     return {
@@ -145,8 +199,9 @@ class GiteeProvider {
   }
 
   get headers() {
+    const token = normalizeAuthToken(this.config.token);
     return {
-      Authorization: `token ${this.config.token}`,
+      Authorization: `token ${token}`,
       Accept: "application/json",
       "Content-Type": "application/json"
     };
@@ -155,9 +210,9 @@ class GiteeProvider {
   async testConnection() {
     const { owner, repo } = this.config;
     const url = `https://gitee.com/api/v5/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
-    const response = await fetch(url, { headers: this.headers });
+    const response = await fetch(url, { headers: this.headers, cache: "no-store" });
     if (!response.ok) {
-      throw new Error(await parseError(response));
+      throw new Error(await parseError(response, "gitee"));
     }
     const json = await response.json();
     return {
@@ -170,8 +225,19 @@ class GiteeProvider {
 
   async getRemoteFile() {
     const url = `${this.contentUrl}?ref=${encodeURIComponent(this.config.branch)}`;
-    const response = await fetch(url, { headers: this.headers });
-    if (response.status === 404) {
+    const response = await fetch(url, { headers: this.headers, cache: "no-store" });
+    let json = null;
+    try {
+      json = await response.json();
+    } catch {
+      if (!response.ok) {
+        throw new Error(buildRequestErrorMessage(response.status, response.statusText, "gitee"));
+      }
+      throw new Error("Gitee 返回的远端文件内容无法解析");
+    }
+
+    const details = extractErrorDetails(json, response.statusText);
+    if (response.status === 404 || isRemoteFileMissing(details)) {
       return {
         exists: false,
         sha: null,
@@ -179,9 +245,21 @@ class GiteeProvider {
       };
     }
     if (!response.ok) {
-      throw new Error(await parseError(response));
+      throw new Error(buildRequestErrorMessage(response.status, details, "gitee"));
     }
-    const json = await response.json();
+    if (Array.isArray(json)) {
+      if (isExplicitDirectoryPath(this.config.path)) {
+        throw new Error("远端路径指向的是目录，请填写具体文件路径");
+      }
+      return {
+        exists: false,
+        sha: null,
+        contentText: null
+      };
+    }
+    if (typeof json.content !== "string") {
+      throw new Error("Gitee 返回的远端文件内容格式异常");
+    }
     return {
       exists: true,
       sha: json.sha,
@@ -200,12 +278,13 @@ class GiteeProvider {
     }
 
     const response = await fetch(this.contentUrl, {
-      method: "PUT",
+      method: sha ? "PUT" : "POST",
       headers: this.headers,
+      cache: "no-store",
       body: JSON.stringify(body)
     });
     if (!response.ok) {
-      throw new Error(await parseError(response));
+      throw new Error(await parseError(response, "gitee"));
     }
     const json = await response.json();
     return {
