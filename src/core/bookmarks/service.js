@@ -1,4 +1,12 @@
 import { getSyncableRoots, resolveTargetRoot } from "./roots.js";
+import { createSerialOperationQueue } from "../../operation-queue.js";
+import { hashSnapshot } from "../snapshot/hash.js";
+import { summarizeExactDuplicateFolders } from "../../snapshot-inspector.js";
+
+const SNAPSHOT_VERSION = 1;
+const MAX_SNAPSHOT_NODES = 100000;
+const MAX_SNAPSHOT_DEPTH = 100;
+const importOperations = createSerialOperationQueue();
 
 // ---- 自变更抑制 ----
 // applySnapshot / clearAllBookmarks 会批量改写书签树，触发大量 bookmarks.on* 事件。
@@ -31,12 +39,27 @@ function validateSnapshot(snapshot) {
     throw new Error("快照缺少 roots 字段");
   }
 
+  if (snapshot.version !== undefined && snapshot.version !== SNAPSHOT_VERSION) {
+    throw new Error(`不支持的快照版本: ${snapshot.version}`);
+  }
+  if (snapshot.roots.length === 0) {
+    throw new Error("快照 roots 不能为空");
+  }
+
+  const stats = { nodes: 0 };
+  const rootIdentities = new Set();
   for (let i = 0; i < snapshot.roots.length; i += 1) {
-    validateRoot(snapshot.roots[i], `roots[${i}]`);
+    const root = snapshot.roots[i];
+    validateRoot(root, `roots[${i}]`, stats);
+    const identity = root.key ? `key:${root.key}` : `title:${root.title || ""}`;
+    if (rootIdentities.has(identity)) {
+      throw new Error(`快照包含重复根节点: ${identity}`);
+    }
+    rootIdentities.add(identity);
   }
 }
 
-function validateRoot(root, path) {
+function validateRoot(root, path, stats) {
   if (!root || typeof root !== "object") {
     throw new Error(`快照结构非法: ${path} 必须是对象`);
   }
@@ -54,17 +77,25 @@ function validateRoot(root, path) {
   }
 
   for (let i = 0; i < root.children.length; i += 1) {
-    validateSnapshotNode(root.children[i], `${path}.children[${i}]`);
+    validateSnapshotNode(root.children[i], `${path}.children[${i}]`, 1, stats);
   }
 }
 
-function validateSnapshotNode(node, path) {
+function validateSnapshotNode(node, path, depth, stats) {
   if (!node || typeof node !== "object") {
     throw new Error(`快照结构非法: ${path} 必须是对象`);
   }
 
   if (node.title !== undefined && typeof node.title !== "string") {
     throw new Error(`快照结构非法: ${path}.title 必须是字符串`);
+  }
+
+  stats.nodes += 1;
+  if (stats.nodes > MAX_SNAPSHOT_NODES) {
+    throw new Error(`快照节点数超过上限 ${MAX_SNAPSHOT_NODES}`);
+  }
+  if (depth > MAX_SNAPSHOT_DEPTH) {
+    throw new Error(`快照目录深度超过上限 ${MAX_SNAPSHOT_DEPTH}`);
   }
 
   if (node.type === "bookmark") {
@@ -82,7 +113,7 @@ function validateSnapshotNode(node, path) {
       throw new Error(`快照结构非法: ${path}.children 必须是数组`);
     }
     for (let i = 0; i < node.children.length; i += 1) {
-      validateSnapshotNode(node.children[i], `${path}.children[${i}]`);
+      validateSnapshotNode(node.children[i], `${path}.children[${i}]`, depth + 1, stats);
     }
     return;
   }
@@ -152,6 +183,7 @@ async function createNode(parentId, node) {
 
 async function applySnapshot(snapshot) {
   const syncableRoots = await getSyncableRoots();
+  const appliedRoots = [];
 
   for (const sourceRoot of snapshot.roots) {
     if (!sourceRoot || !Array.isArray(sourceRoot.children)) {
@@ -167,6 +199,24 @@ async function applySnapshot(snapshot) {
     await clearChildren(targetRoot.id);
     for (const child of sourceRoot.children) {
       await createNode(targetRoot.id, child);
+    }
+    appliedRoots.push({ key: targetRoot.key, sourceRoot });
+  }
+  return appliedRoots;
+}
+
+async function verifyAppliedRoots(appliedRoots) {
+  const currentSnapshot = await exportSnapshot();
+  const currentByKey = new Map(currentSnapshot.roots.map((root) => [root.key, root]));
+  for (const applied of appliedRoots) {
+    const actualRoot = currentByKey.get(applied.key);
+    if (!actualRoot) {
+      throw new Error(`导入校验失败：缺少目标根节点 ${applied.key}`);
+    }
+    const expectedHash = await hashSnapshot({ version: SNAPSHOT_VERSION, roots: [{ key: applied.key, children: applied.sourceRoot.children }] });
+    const actualHash = await hashSnapshot({ version: SNAPSHOT_VERSION, roots: [{ key: applied.key, children: actualRoot.children }] });
+    if (expectedHash !== actualHash) {
+      throw new Error(`导入校验失败：根节点 ${applied.key} 与快照不一致`);
     }
   }
 }
@@ -188,28 +238,45 @@ export async function exportSnapshot() {
   };
 }
 
-export async function importSnapshot(snapshot) {
+async function performImportSnapshot(snapshot, { allowExactDuplicates = false } = {}) {
   validateSnapshot(snapshot);
+  const duplicateSummary = summarizeExactDuplicateFolders(snapshot);
+  if (duplicateSummary.extraFolders > 0 && !allowExactDuplicates) {
+    const error = new Error(`快照包含 ${duplicateSummary.extraFolders} 个完全重复目录，请先清理后再导入。样例：${duplicateSummary.samples.join("；")}`);
+    error.code = "SNAPSHOT_DUPLICATE_FOLDERS";
+    error.details = duplicateSummary;
+    throw error;
+  }
 
   const backupSnapshot = await exportSnapshot();
   // 抑制范围覆盖导入与回滚全程（回滚同样是自变更，漏掉会触发回音推送）。
   return withSelfMutation(async () => {
     try {
-      await applySnapshot(snapshot);
+      const appliedRoots = await applySnapshot(snapshot);
+      if (appliedRoots.length === 0) {
+        throw new Error("快照中没有可导入的标准书签根节点");
+      }
+      await verifyAppliedRoots(appliedRoots);
+      return {
+        importedAt: new Date().toISOString(),
+        rootCount: appliedRoots.length,
+        verified: true
+      };
     } catch (error) {
       try {
-        await applySnapshot(backupSnapshot);
+        const rollbackRoots = await applySnapshot(backupSnapshot);
+        await verifyAppliedRoots(rollbackRoots);
       } catch (rollbackError) {
         throw new Error(`导入失败，且回滚失败：${error.message}；回滚错误：${rollbackError.message}`);
       }
       throw new Error(`导入失败，已回滚：${error.message}`);
     }
 
-    return {
-      importedAt: new Date().toISOString(),
-      rootCount: snapshot.roots.length
-    };
   });
+}
+
+export function importSnapshot(snapshot, options = {}) {
+  return importOperations.run("importSnapshot", () => performImportSnapshot(snapshot, options));
 }
 
 // 清空三个标准根下的所有书签（不触碰 Edge workspace 等非标准根）。

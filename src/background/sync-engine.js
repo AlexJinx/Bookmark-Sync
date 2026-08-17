@@ -19,11 +19,14 @@ import {
   makeSyncState
 } from "./sync-state.js";
 import { isConflictError } from "./conflict.js";
+import { createSerialOperationQueue } from "../operation-queue.js";
+import { summarizeExactDuplicateFolders } from "../snapshot-inspector.js";
 
 // ---- 同步进行中护栏（供变更触发器跳过窗口内的自动推送） ----
 // 计数器而非布尔：手动推送与定时推送可能重叠，先结束的一方不能把
 // 护栏误置为"空闲"（布尔实现会让第三个同步趁隙挤进来）。
 let syncRunningDepth = 0;
+const syncOperations = createSerialOperationQueue();
 
 export function isSyncRunning() {
   return syncRunningDepth > 0;
@@ -69,6 +72,22 @@ function assertKnownConfiguredProvider(config, provider) {
   if (!isProviderConfigured(config, provider)) {
     throw new Error(`平台未完成配置: ${provider}`);
   }
+}
+
+function ensureNoExactDuplicateFolders({ force, snapshot, operation, side }) {
+  if (force) {
+    return;
+  }
+  const duplicates = summarizeExactDuplicateFolders(snapshot);
+  if (duplicates.extraFolders === 0) {
+    return;
+  }
+  const location = side === "remote" ? "远端快照" : "本地书签";
+  throwConflictError(`${location}包含 ${duplicates.extraFolders} 个完全重复目录，已阻止覆盖操作。`, {
+    operation,
+    type: `${side}_duplicate_folders`,
+    duplicates
+  });
 }
 
 // Gist 首次推送会自动创建 Gist；把返回的 id 写回持久化配置，
@@ -237,9 +256,10 @@ function buildMultiProviderLastSync(results, force) {
 }
 
 export async function pushToRemote({ force = false, provider = "", syncAllProviders = null } = {}) {
-  return withSyncRun(async () => {
+  return syncOperations.run("pushToRemote", () => withSyncRun(async () => {
     const config = await getConfig();
     const [local, rawSyncState] = await Promise.all([getLocalSnapshotAndHash(), getSyncState()]);
+    ensureNoExactDuplicateFolders({ force, snapshot: local.snapshot, operation: "push", side: "local" });
     const syncStateStore = normalizeSyncStateStore(rawSyncState);
     const selectedProvider = typeof provider === "string" ? provider.trim() : "";
     const hasSyncAllOverride = typeof syncAllProviders === "boolean";
@@ -295,20 +315,42 @@ export async function pushToRemote({ force = false, provider = "", syncAllProvid
     if (failures.length > 0) {
       // 优先抛冲突错误，保留弹窗的冲突预览/强制重试交互；
       // 强制重试会全量重推，已成功平台因内容一致走 noop，幂等安全。
+      if (results.length > 0) {
+        await saveLastSync({
+          at: new Date().toISOString(),
+          direction: "push",
+          provider: results.map((item) => item.lastSync.provider).join(","),
+          providers: results.map((item) => item.lastSync.provider),
+          partial: true,
+          force: Boolean(force),
+          syncAllProviders: true,
+          items: results.map((item) => item.lastSync),
+          failures: failures.map((item) => ({ provider: item.provider, message: item.error?.message || String(item.error) }))
+        });
+      }
       const conflictFailure = failures.find((item) => isConflictError(item.error));
-      throw (conflictFailure || failures[0]).error;
+      if (conflictFailure) {
+        throw conflictFailure.error;
+      }
+      const succeeded = results.map((item) => item.lastSync.provider);
+      const successText = succeeded.length > 0 ? `已成功：${succeeded.join("、")}；` : "";
+      const failureText = failures.map((item) => `${item.provider}: ${item.error?.message || String(item.error)}`).join("；");
+      const error = new Error(`多平台推送未全部完成。${successText}失败：${failureText}`);
+      error.code = "PARTIAL_PUSH";
+      error.details = { succeeded, failures: failures.map((item) => ({ provider: item.provider, message: item.error?.message || String(item.error) })) };
+      throw error;
     }
 
     const lastSync = buildMultiProviderLastSync(results, force);
     await saveLastSync(lastSync);
     return lastSync;
-  });
+  }));
 }
 
 // ---- 拉取 ----
 
 export async function pullFromRemote({ force = false, provider = "" } = {}) {
-  return withSyncRun(async () => {
+  return syncOperations.run("pullFromRemote", () => withSyncRun(async () => {
     const config = await getConfig();
     const selectedProvider = typeof provider === "string" ? provider.trim() : "";
     let workingConfig = config;
@@ -322,6 +364,7 @@ export async function pullFromRemote({ force = false, provider = "" } = {}) {
 
     const remote = await client.getRemoteFile();
     const { snapshot: remoteSnapshot, remoteHash } = await getRemoteSnapshotAndHash(remote);
+    ensureNoExactDuplicateFolders({ force, snapshot: remoteSnapshot, operation: "pull", side: "remote" });
 
     const [local, rawSyncState] = await Promise.all([getLocalSnapshotAndHash(), getSyncState()]);
     const syncStateStore = normalizeSyncStateStore(rawSyncState);
@@ -338,7 +381,7 @@ export async function pullFromRemote({ force = false, provider = "" } = {}) {
     });
 
     if (remoteHash !== local.localHash) {
-      await importSnapshot(remoteSnapshot);
+      await importSnapshot(remoteSnapshot, { allowExactDuplicates: force });
     }
 
     const nextSyncState = makeSyncState(workingConfig, remote.sha, remoteHash);
@@ -355,7 +398,7 @@ export async function pullFromRemote({ force = false, provider = "" } = {}) {
     await saveLastSync(lastSync);
 
     return lastSync;
-  });
+  }));
 }
 
 // ---- 计数 ----
@@ -392,11 +435,13 @@ async function getRemoteBookmarkCount(config, provider) {
     }
 
     const remoteSnapshot = parseSnapshotText(remoteFile.contentText || "");
+    const duplicateFolders = summarizeExactDuplicateFolders(remoteSnapshot);
     return {
       provider,
       configured: true,
       exists: true,
       bookmarks: countSnapshotBookmarks(remoteSnapshot),
+      duplicateFolders: duplicateFolders.extraFolders,
       status: RemoteStatus.OK,
       message: ""
     };
@@ -413,8 +458,12 @@ async function getRemoteBookmarkCount(config, provider) {
 }
 
 export async function getBookmarkCounts() {
-  const [config, localSnapshot] = await Promise.all([getConfig(), exportSnapshot()]);
+  const [config, localSnapshot] = await Promise.all([
+    getConfig(),
+    syncOperations.run("readLocalBookmarkCounts", () => exportSnapshot())
+  ]);
   const localBookmarks = countSnapshotBookmarks(localSnapshot);
+  const localDuplicates = summarizeExactDuplicateFolders(localSnapshot);
 
   const remotes = {};
   const results = await Promise.all(PROVIDER_IDS.map((provider) => getRemoteBookmarkCount(config, provider)));
@@ -424,6 +473,7 @@ export async function getBookmarkCounts() {
 
   return {
     localBookmarks,
+    localDuplicateFolders: localDuplicates.extraFolders,
     remotes
   };
 }

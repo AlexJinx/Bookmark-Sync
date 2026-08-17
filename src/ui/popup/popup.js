@@ -259,7 +259,9 @@ const CONFLICT_TYPE_NAMES = {
   no_base_diverged: "首次同步且内容不一致",
   remote_deleted: "远端文件被删除",
   remote_deleted_and_local_changed: "远端被删除且本地有新改动",
-  remote_deleted_during_update: "远端文件在推送过程中被删除"
+  remote_deleted_during_update: "远端文件在推送过程中被删除",
+  local_duplicate_folders: "本地存在完全重复目录",
+  remote_duplicate_folders: "远端存在完全重复目录"
 };
 
 function formatTypeName(type) {
@@ -306,6 +308,14 @@ function renderConflictPreview(error) {
     }
   }
 
+  const duplicates = details.duplicates;
+  if (duplicates?.extraFolders > 0) {
+    lines.push(`完全重复目录: ${duplicates.extraFolders} 个多余副本`);
+    for (const item of duplicates.samples || []) {
+      lines.push(`! ${item}`);
+    }
+  }
+
   box.textContent = lines.join("\n");
   box.classList.remove("hidden");
 }
@@ -337,6 +347,9 @@ function formatLastSync(lastSync) {
   const base = `${formatTime(lastSync.at)} (${lastSync.direction || "manual"}, ${formatLastSyncProvider(lastSync)})`;
   if (lastSync.noop) {
     return `${base} [无变化]`;
+  }
+  if (lastSync.partial) {
+    return `${base} [部分成功]`;
   }
   if (lastSync.force) {
     return `${base} [强制]`;
@@ -388,7 +401,8 @@ function renderProviderBookmarkCount(provider, remoteData) {
   const label = getProviderLabel(provider);
 
   if (remoteData?.status === RemoteStatus.OK && Number.isFinite(remoteData?.bookmarks)) {
-    setCountNodeValue(node, String(remoteData.bookmarks), `${label} 云端书签: ${remoteData.bookmarks} 条`);
+    const duplicateText = Number(remoteData.duplicateFolders) > 0 ? `；完全重复目录: ${remoteData.duplicateFolders} 个` : "";
+    setCountNodeValue(node, String(remoteData.bookmarks), `${label} 云端书签: ${remoteData.bookmarks} 条${duplicateText}`);
     return;
   }
 
@@ -401,7 +415,8 @@ function renderProviderBookmarkCount(provider, remoteData) {
 function renderBookmarkCounts(counts) {
   const localNode = $("localBookmarkCount");
   const localValue = formatCount(counts?.localBookmarks);
-  setCountNodeValue(localNode, localValue, Number.isFinite(counts?.localBookmarks) ? `本地书签: ${counts.localBookmarks} 条` : "");
+  const duplicateText = Number(counts?.localDuplicateFolders) > 0 ? `；完全重复目录: ${counts.localDuplicateFolders} 个` : "";
+  setCountNodeValue(localNode, localValue, Number.isFinite(counts?.localBookmarks) ? `本地书签: ${counts.localBookmarks} 条${duplicateText}` : "");
 
   const remotes = counts?.remotes || {};
   for (const provider of availableProviders) {
@@ -431,7 +446,8 @@ async function refreshUiState() {
 
 function buildConflictMessage(error, suffix) {
   const summary = error?.details?.summary || error?.message || "检测到冲突";
-  return `${summary}\n\n已在下方显示差异预览。\n${suffix}`;
+  const detailText = error?.details?.duplicates ? "已在下方显示重复目录样例。" : "已在下方显示差异预览。";
+  return `${summary}\n\n${detailText}\n${suffix}`;
 }
 
 function formatProviderCountDelta(provider, beforeCounts, afterCounts) {

@@ -256,6 +256,23 @@ h2 {
   line-height: 1.46;
 }
 
+.config-token-export {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  margin: 12px 0 0;
+  color: #704a36;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.config-token-export input {
+  width: auto;
+  margin: 0;
+  accent-color: #e05010;
+}
+
 .backup-actions {
   margin-top: 13px;
   display: grid;
@@ -335,14 +352,6 @@ select:hover {
 
 select:hover {
   box-shadow: 0 0 0 2px rgba(236, 91, 19, 0.09);
-}
-
-.native-provider {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
 }
 
 input::placeholder {
@@ -468,8 +477,12 @@ select:focus {
 }
 
 .field-provider {
+  display: grid;
+  gap: 8px;
   margin-bottom: 8px;
   position: relative;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .provider-select {
@@ -678,6 +691,13 @@ button:hover {
 
 button:active {
   transform: translateY(0);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+  transform: none;
+  filter: none;
 }
 
 button:focus-visible {

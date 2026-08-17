@@ -37,6 +37,10 @@ export function ensurePushNoConflict({ force, syncState, remote, localHash, remo
     return;
   }
 
+  if (remote.exists && remoteHash === localHash) {
+    return;
+  }
+
   if (!remote.exists) {
     if (syncState?.remoteSha) {
       const localChanged = hasLocalChanged(syncState, localHash);
@@ -103,6 +107,10 @@ export function ensurePushNoConflict({ force, syncState, remote, localHash, remo
 
 export function ensurePullNoConflict({ force, syncState, remote, localHash, remoteHash, localSnapshot, remoteSnapshot }) {
   if (force) {
+    return;
+  }
+
+  if (localHash === remoteHash) {
     return;
   }
 

@@ -31,7 +31,7 @@ function flattenSnapshot(snapshot) {
   }
 
   for (const root of snapshot?.roots || []) {
-    const rootPath = root?.title || root?.key || "root";
+    const rootPath = root?.key || root?.title || "root";
     walkNodes(root?.children || [], rootPath);
   }
 

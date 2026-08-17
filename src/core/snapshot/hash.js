@@ -2,9 +2,20 @@ function normalizeSnapshot(snapshot) {
   if (!snapshot || typeof snapshot !== "object" || !Array.isArray(snapshot.roots)) {
     throw new Error("快照格式非法，无法计算哈希");
   }
+
+  const roots = snapshot.roots
+    .map((root) => ({
+      key:
+        typeof root?.key === "string" && root.key
+          ? root.key
+          : `title:${typeof root?.title === "string" ? root.title : ""}`,
+      children: Array.isArray(root?.children) ? root.children : []
+    }))
+    .sort((left, right) => left.key.localeCompare(right.key));
+
   return {
     version: snapshot.version || 1,
-    roots: snapshot.roots
+    roots
   };
 }
 
