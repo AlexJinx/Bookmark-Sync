@@ -1,4 +1,4 @@
-# Bookmark Sync（Chrome / Edge）
+# Bookmark Sync（Edge）
 
 将浏览器书签同步到你自己的 GitHub 仓库、Gitee 仓库或 GitHub Gist。支持手动推送/拉取、书签变更自动推送（防抖）、定时推送兜底、冲突预览与强制同步、工具栏徽章与系统通知。
 
