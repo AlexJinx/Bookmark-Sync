@@ -1,59 +1,223 @@
-import { Actions } from "../../core/actions.js";
-import { PROVIDERS, PROVIDER_IDS, getProviderLabel } from "../../providers/registry.js";
-import { normalizeIntervalMinutes, normalizeDebounceSeconds } from "../../core/config.js";
-import { normalizeAuthToken, toTrimmedString, toBoolean } from "../../core/text.js";
-import { countSnapshotBookmarks } from "../../core/snapshot/count.js";
-import { send } from "../shared/messaging.js";
-
-const CONFIG_EXPORT_TYPE = "bookmark-sync-config";
-const CONFIG_EXPORT_VERSION = 2;
-
-// 各 scoped 字段的输入框 id 与字段名一致。
 const fields = {
   provider: document.getElementById("provider"),
+  theme: document.getElementById("theme"),
+  skin: document.getElementById("skin"),
   token: document.getElementById("token"),
   tokenVisibilityBtn: document.getElementById("tokenVisibilityBtn"),
   owner: document.getElementById("owner"),
   repo: document.getElementById("repo"),
   branch: document.getElementById("branch"),
   path: document.getElementById("path"),
-  gistId: document.getElementById("gistId"),
-  fileName: document.getElementById("fileName"),
-  changeSyncEnabled: document.getElementById("changeSyncEnabled"),
-  changeSyncDebounceSeconds: document.getElementById("changeSyncDebounceSeconds"),
   autoSyncEnabled: document.getElementById("autoSyncEnabled"),
-  autoSyncIntervalMinutes: document.getElementById("autoSyncIntervalMinutes"),
-  checkRemoteOnStartup: document.getElementById("checkRemoteOnStartup"),
-  notifyOnAutoSyncError: document.getElementById("notifyOnAutoSyncError"),
-  notifyOnAutoSyncSuccess: document.getElementById("notifyOnAutoSyncSuccess"),
-  notifyOnManualDone: document.getElementById("notifyOnManualDone")
+  autoSyncIntervalMinutes: document.getElementById("autoSyncIntervalMinutes")
 };
+
+import { CONFIG_EXPORT_TYPE, createConfigExportPayload } from "../../config-export.js";
+import { applyProviderDrafts } from "../../config-drafts.js";
+import { PROVIDERS } from "../../providers/registry.js";
 
 const providerUi = {
-  root: document.getElementById("providerSelect"),
-  trigger: document.getElementById("providerTrigger"),
-  label: document.getElementById("providerLabel"),
-  menu: document.getElementById("providerMenu"),
-  options: []
+  tabs: Array.from(document.querySelectorAll(".platform-tab"))
 };
 
-const TOKEN_NOTES = {
-  github:
-    "请直接粘贴原始 Token，不要包含 Bearer/token 前缀。推荐 Fine-grained Token：需添加 Metadata(只读) 与 Contents(读写) 权限。",
-  gitee: "请直接粘贴原始私人令牌（PAT），确保具备仓库内容读写权限。",
-  gist: "需要 classic Personal Access Token 并勾选 gist 权限（Fine-grained Token 不支持 Gist）。"
+const THEME_CHOICES = ["light", "dark", "auto"];
+const THEME_LABELS = {
+  light: "浅色",
+  dark: "深色",
+  auto: "跟随系统"
 };
 
-const scopedDrafts = {};
-for (const id of PROVIDER_IDS) {
-  scopedDrafts[id] = null;
+const themeUi = {
+  switchBtn: document.getElementById("themeSwitch"),
+  autoBtn: document.getElementById("themeAutoBtn"),
+  hint: document.getElementById("themeHint"),
+  media: window.matchMedia("(prefers-color-scheme: dark)")
+};
+
+function resolveTheme(choice) {
+  if (choice === "auto") {
+    return themeUi.media.matches ? "dark" : "light";
+  }
+  return choice === "dark" ? "dark" : "light";
 }
 
-let activeProvider = "github";
+function applyTheme(choice) {
+  document.documentElement.dataset.theme = resolveTheme(choice);
+}
+
+function syncThemeUi(choice) {
+  const isDark = resolveTheme(choice) === "dark";
+  if (themeUi.switchBtn) {
+    themeUi.switchBtn.classList.toggle("is-dark", isDark);
+    themeUi.switchBtn.classList.toggle("is-auto", choice === "auto");
+    themeUi.switchBtn.setAttribute("aria-checked", String(isDark));
+    themeUi.switchBtn.setAttribute("aria-label", isDark ? "切换到浅色模式" : "切换到深色模式");
+  }
+  if (themeUi.autoBtn) {
+    themeUi.autoBtn.setAttribute("aria-pressed", String(choice === "auto"));
+  }
+  if (themeUi.hint) {
+    themeUi.hint.textContent =
+      choice === "auto"
+        ? `当前跟随系统：${isDark ? "深色" : "浅色"}`
+        : `当前主题：${THEME_LABELS[choice] || THEME_LABELS.auto}`;
+  }
+}
+
+function setThemeValue(choice, { emitChange = false } = {}) {
+  if (SKIN_BASE_THEME[currentSkin()]) {
+    return;
+  }
+
+  const next = THEME_CHOICES.includes(choice) ? choice : "auto";
+  const changed = fields.theme.value !== next;
+  fields.theme.value = next;
+  applyTheme(next);
+  syncThemeUi(next);
+  if (changed && emitChange) {
+    fields.theme.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+}
+
+function bindThemeOptions() {
+  const initial = fields.theme.value || "auto";
+  applyTheme(initial);
+  syncThemeUi(initial);
+
+  themeUi.switchBtn?.addEventListener("click", () => {
+    const next = resolveTheme(fields.theme.value) === "dark" ? "light" : "dark";
+    setThemeValue(next, { emitChange: true });
+  });
+
+  themeUi.autoBtn?.addEventListener("click", () => {
+    if (fields.theme.value === "auto") {
+      setThemeValue(resolveTheme("auto"), { emitChange: true });
+      return;
+    }
+    setThemeValue("auto", { emitChange: true });
+  });
+
+  themeUi.media.addEventListener("change", () => {
+    if (fields.theme.value !== "auto" || SKIN_BASE_THEME[currentSkin()]) {
+      return;
+    }
+    applyTheme("auto");
+    syncThemeUi("auto");
+  });
+}
+
+const SKIN_CHOICES = ["default", "aurora", "neon", "brutal"];
+const SKIN_LABELS = {
+  default: "默认",
+  aurora: "极光玻璃",
+  neon: "霓虹终端",
+  brutal: "纸感硬边"
+};
+const SKIN_BASE_THEME = {
+  default: "",
+  aurora: "dark",
+  neon: "dark",
+  brutal: "light"
+};
+
+const skinUi = {
+  options: Array.from(document.querySelectorAll("[data-skin-choice]")),
+  note: document.getElementById("skinNote")
+};
+
+function currentSkin() {
+  return SKIN_CHOICES.includes(fields.skin.value) ? fields.skin.value : "default";
+}
+
+function syncThemeAvailability(skin) {
+  const locked = Boolean(SKIN_BASE_THEME[skin]);
+  const tip = locked ? `${SKIN_LABELS[skin]}风格自带明暗，明暗开关已锁定` : "";
+
+  for (const element of [themeUi.switchBtn, themeUi.autoBtn]) {
+    if (!element) {
+      continue;
+    }
+    element.disabled = locked;
+    if (locked) {
+      element.title = tip;
+    } else {
+      element.removeAttribute("title");
+    }
+  }
+
+  if (themeUi.autoBtn && !locked) {
+    themeUi.autoBtn.title = "跟随系统外观";
+  }
+
+  if (skinUi.note) {
+    skinUi.note.textContent = locked
+      ? `已启用${SKIN_LABELS[skin]}风格，明暗由该风格自带（${
+          SKIN_BASE_THEME[skin] === "dark" ? "深色" : "浅色"
+        }）。`
+      : "当前为默认风格，可使用右上角的明暗开关。";
+  }
+}
+
+function syncSkinUi(skin) {
+  for (const option of skinUi.options) {
+    option.setAttribute("aria-checked", String(option.dataset.skinChoice === skin));
+  }
+}
+
+function applySkinChoice(skin) {
+  const next = SKIN_CHOICES.includes(skin) ? skin : "default";
+  const locked = SKIN_BASE_THEME[next];
+  fields.skin.value = next;
+  document.documentElement.dataset.skin = next;
+
+  if (locked) {
+    document.documentElement.dataset.theme = locked;
+    syncThemeUi(locked);
+  } else {
+    applyTheme(fields.theme.value || "auto");
+    syncThemeUi(fields.theme.value || "auto");
+  }
+
+  syncSkinUi(next);
+  syncThemeAvailability(next);
+}
+
+function bindSkinOptions() {
+  if (skinUi.options.length === 0) {
+    return;
+  }
+
+  applySkinChoice(fields.skin.value || "default");
+
+  for (const option of skinUi.options) {
+    option.addEventListener("click", () => {
+      const next = option.dataset.skinChoice || "default";
+      if (fields.skin.value === next) {
+        return;
+      }
+      applySkinChoice(next);
+      fields.skin.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  }
+}
+
+document.documentElement.dataset.theme = themeUi.media.matches ? "dark" : "light";
+
+const scopedDrafts = {
+  github: null,
+  gitee: null
+};
+
+const PROVIDER_KEYS = ["github", "gitee"];
+const PROVIDER_LABELS = {
+  github: "GitHub",
+  gitee: "Gitee"
+};
+
+let activeProvider = fields.provider.value || "github";
 let hasUnsavedChanges = false;
 let statusHideTimer = null;
-
-// ---- 状态提示 ----
+let isRunning = false;
 
 function hideStatus() {
   const status = document.getElementById("status");
@@ -72,7 +236,7 @@ function hideStatus() {
   status.removeAttribute("data-type");
 }
 
-function setStatus(message, isError = false, { autoHide = true } = {}) {
+function setStatus(message, isError = false) {
   const status = document.getElementById("status");
   const statusText = document.getElementById("statusText");
   const text = typeof message === "string" ? message.trim() : String(message || "");
@@ -95,10 +259,10 @@ function setStatus(message, isError = false, { autoHide = true } = {}) {
   status.setAttribute("aria-live", isError ? "assertive" : "polite");
   status.classList.remove("hidden");
 
-  // 进行中的提示（autoHide=false）保持常显，直到被完成/失败提示替换。
-  if (autoHide) {
-    statusHideTimer = setTimeout(() => hideStatus(), isError ? 6000 : 3200);
-  }
+  statusHideTimer = setTimeout(
+    () => hideStatus(),
+    isError ? 6000 : 3200
+  );
 }
 
 function setDirtyState(isDirty) {
@@ -120,99 +284,136 @@ function markClean() {
   setDirtyState(false);
 }
 
-// ---- 数值规范化 ----
+function setActionBusy(busy) {
+  for (const id of [
+    "saveBtn",
+    "testBtn",
+    "exportBookmarksBtn",
+    "importBookmarksBtn",
+    "exportConfigBtn",
+    "importConfigBtn",
+    "providerTrigger"
+  ]) {
+    const element = document.getElementById(id);
+    if (element) {
+      element.disabled = Boolean(busy);
+    }
+  }
+}
+
+function formatTime(iso) {
+  if (!iso) {
+    return "无";
+  }
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) {
+    return "无";
+  }
+  return d.toLocaleString();
+}
+
+function normalizeIntervalMinutes(value) {
+  const parsed = Math.floor(Number(value));
+  if (!Number.isFinite(parsed)) {
+    return 60;
+  }
+  return Math.max(15, parsed);
+}
 
 function normalizeIntervalInput() {
   const before = fields.autoSyncIntervalMinutes.value;
   const normalized = String(normalizeIntervalMinutes(before));
   fields.autoSyncIntervalMinutes.value = normalized;
   if (before && before !== normalized) {
-    setStatus("定时推送间隔最小为 15 分钟，已自动调整。");
+    setStatus("自动同步间隔最小为 15 分钟，已自动调整。");
   }
 }
 
-function normalizeDebounceInput() {
-  const before = fields.changeSyncDebounceSeconds.value;
-  const normalized = String(normalizeDebounceSeconds(before));
-  fields.changeSyncDebounceSeconds.value = normalized;
-  if (before && before !== normalized) {
-    setStatus("变更推送延迟范围为 30 ~ 300 秒，已自动调整。");
-  }
-}
-
-// ---- scoped 配置读写 ----
-
-function getScopedFieldNames(providerId) {
-  return Object.keys(PROVIDERS[providerId]?.defaults || {});
-}
-
-function isRepoTypeProvider(providerId) {
-  return "owner" in (PROVIDERS[providerId]?.defaults || {});
-}
-
-function readScopedInputs(providerId = fields.provider.value) {
-  const result = {};
-  for (const key of getScopedFieldNames(providerId)) {
-    const input = fields[key];
-    if (!input) {
-      continue;
+async function sendMessage(action, extra = {}) {
+  const response = await chrome.runtime.sendMessage({ action, ...extra });
+  if (!response?.ok) {
+    if (typeof response?.error === "string") {
+      throw new Error(response.error || "请求失败");
     }
-    result[key] = key === "token" ? normalizeAuthToken(input.value) : input.value.trim();
+    throw new Error(response?.error?.message || "请求失败");
   }
-  return result;
+  return response.data;
 }
 
-function normalizeScopedConfig(providerId, rawScoped, fallbackScoped = {}) {
-  const scoped = rawScoped && typeof rawScoped === "object" && !Array.isArray(rawScoped) ? rawScoped : {};
-  const result = {};
-  for (const key of getScopedFieldNames(providerId)) {
-    result[key] = toTrimmedString(scoped[key], fallbackScoped[key] || "");
+function getProviderScopedConfig(config) {
+  return config[config.provider] || {};
+}
+
+function getProviderLabel(value) {
+  return PROVIDER_LABELS[value] || value;
+}
+
+function toTrimmedString(value, fallback = "") {
+  if (typeof value === "string") {
+    return value.trim();
   }
-  return result;
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+  return String(value).trim();
+}
+
+function toBoolean(value, fallback = false) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (value === "true" || value === "1" || value === 1) {
+    return true;
+  }
+  if (value === "false" || value === "0" || value === 0) {
+    return false;
+  }
+  return fallback;
+}
+
+function normalizeTokenInput(value) {
+  return toTrimmedString(value)
+    .replace(/^(?:bearer|token)\s+/i, "")
+    .replace(/\s+/g, "");
+}
+
+function readScopedInputs() {
+  return {
+    token: normalizeTokenInput(fields.token.value),
+    owner: fields.owner.value.trim(),
+    repo: fields.repo.value.trim(),
+    branch: fields.branch.value.trim(),
+    path: fields.path.value.trim()
+  };
 }
 
 function buildNextConfig(currentConfig) {
   const provider = fields.provider.value;
-  const scoped = readScopedInputs(provider);
-
-  // 本次会话切换平台时暂存的其他平台草稿一并写入，
-  // 否则"保存设置"后仍有未落盘的编辑，与"所有更改已保存"提示不符。
-  const draftSections = {};
-  for (const id of PROVIDER_IDS) {
-    if (id !== provider && scopedDrafts[id]) {
-      draftSections[id] = {
-        ...currentConfig[id],
-        ...scopedDrafts[id]
-      };
+  const scoped = readScopedInputs();
+  return applyProviderDrafts(currentConfig, {
+    activeProvider: provider,
+    activeDraft: scoped,
+    drafts: scopedDrafts,
+    providerKeys: PROVIDER_KEYS,
+    settings: {
+      autoSyncEnabled: fields.autoSyncEnabled.checked,
+      autoSyncIntervalMinutes: normalizeIntervalMinutes(fields.autoSyncIntervalMinutes.value),
+      theme: fields.theme.value || "auto",
+      skin: fields.skin.value || "default"
     }
-  }
-
-  return {
-    ...currentConfig,
-    ...draftSections,
-    provider,
-    [provider]: {
-      ...currentConfig[provider],
-      ...scoped
-    },
-    autoSyncEnabled: fields.autoSyncEnabled.checked,
-    autoSyncIntervalMinutes: normalizeIntervalMinutes(fields.autoSyncIntervalMinutes.value),
-    changeSync: {
-      ...(currentConfig.changeSync || {}),
-      enabled: fields.changeSyncEnabled.checked,
-      debounceSeconds: normalizeDebounceSeconds(fields.changeSyncDebounceSeconds.value)
-    },
-    checkRemoteOnStartup: fields.checkRemoteOnStartup.checked,
-    notify: {
-      ...(currentConfig.notify || {}),
-      onAutoSyncError: fields.notifyOnAutoSyncError.checked,
-      onAutoSyncSuccess: fields.notifyOnAutoSyncSuccess.checked,
-      onManualDone: fields.notifyOnManualDone.checked
-    }
-  };
+  });
 }
 
-// ---- 配置导入/导出 ----
+function normalizeScopedConfig(rawScoped, fallbackScoped = {}) {
+  const scoped = rawScoped && typeof rawScoped === "object" && !Array.isArray(rawScoped) ? rawScoped : {};
+  return {
+    token: toTrimmedString(scoped.token, fallbackScoped.token || ""),
+    owner: toTrimmedString(scoped.owner, fallbackScoped.owner || ""),
+    repo: toTrimmedString(scoped.repo, fallbackScoped.repo || ""),
+    branch: toTrimmedString(scoped.branch, fallbackScoped.branch || ""),
+    path: toTrimmedString(scoped.path, fallbackScoped.path || "")
+  };
+}
 
 function extractImportedConfigPayload(parsed) {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -226,23 +427,7 @@ function extractImportedConfigPayload(parsed) {
     return parsed.config;
   }
 
-  // 裸配置对象（无导出信封）至少要带一个可识别的配置字段，
-  // 否则选错文件（如书签快照）会被静默"成功导入"成一次空操作。
-  const knownKeys = [
-    "configVersion",
-    "provider",
-    "autoSyncEnabled",
-    "autoSyncIntervalMinutes",
-    "syncAllProviders",
-    "changeSync",
-    "notify",
-    "checkRemoteOnStartup",
-    ...PROVIDER_IDS
-  ];
-  if (knownKeys.some((key) => Object.prototype.hasOwnProperty.call(parsed, key))) {
-    return parsed;
-  }
-  throw new Error("配置文件格式错误：未识别到任何配置字段，请确认选择的是配置导出文件");
+  return parsed;
 }
 
 function normalizeImportedConfig(rawConfig, baseConfig) {
@@ -250,35 +435,17 @@ function normalizeImportedConfig(rawConfig, baseConfig) {
     throw new Error("配置文件格式错误：config 必须是对象");
   }
 
-  const provider = PROVIDER_IDS.includes(rawConfig.provider) ? rawConfig.provider : baseConfig.provider;
-
-  const providerSections = {};
-  for (const id of PROVIDER_IDS) {
-    providerSections[id] = normalizeScopedConfig(id, rawConfig[id], baseConfig[id]);
-  }
-
-  const rawChangeSync = rawConfig.changeSync && typeof rawConfig.changeSync === "object" ? rawConfig.changeSync : {};
-  const rawNotify = rawConfig.notify && typeof rawConfig.notify === "object" ? rawConfig.notify : {};
-  const baseChangeSync = baseConfig.changeSync || {};
-  const baseNotify = baseConfig.notify || {};
-
+  const provider = PROVIDER_KEYS.includes(rawConfig.provider) ? rawConfig.provider : baseConfig.provider;
   return {
     ...baseConfig,
     provider,
-    ...providerSections,
+    github: normalizeScopedConfig(rawConfig.github, baseConfig.github),
+    gitee: normalizeScopedConfig(rawConfig.gitee, baseConfig.gitee),
     autoSyncEnabled: toBoolean(rawConfig.autoSyncEnabled, Boolean(baseConfig.autoSyncEnabled)),
     autoSyncIntervalMinutes: normalizeIntervalMinutes(rawConfig.autoSyncIntervalMinutes ?? baseConfig.autoSyncIntervalMinutes),
     syncAllProviders: toBoolean(rawConfig.syncAllProviders, Boolean(baseConfig.syncAllProviders)),
-    changeSync: {
-      enabled: toBoolean(rawChangeSync.enabled, Boolean(baseChangeSync.enabled)),
-      debounceSeconds: normalizeDebounceSeconds(rawChangeSync.debounceSeconds ?? baseChangeSync.debounceSeconds)
-    },
-    checkRemoteOnStartup: toBoolean(rawConfig.checkRemoteOnStartup, Boolean(baseConfig.checkRemoteOnStartup)),
-    notify: {
-      onAutoSyncError: toBoolean(rawNotify.onAutoSyncError, baseNotify.onAutoSyncError !== false),
-      onAutoSyncSuccess: toBoolean(rawNotify.onAutoSyncSuccess, Boolean(baseNotify.onAutoSyncSuccess)),
-      onManualDone: toBoolean(rawNotify.onManualDone, Boolean(baseNotify.onManualDone))
-    }
+    theme: THEME_CHOICES.includes(rawConfig.theme) ? rawConfig.theme : baseConfig.theme,
+    skin: SKIN_CHOICES.includes(rawConfig.skin) ? rawConfig.skin : baseConfig.skin
   };
 }
 
@@ -298,65 +465,22 @@ function downloadJsonFile(fileName, payload) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function downloadConfig(config) {
+function downloadConfig(config, { includeTokens = false } = {}) {
   const manifestVersion = chrome.runtime.getManifest().version || "unknown";
-  const payload = {
-    type: CONFIG_EXPORT_TYPE,
-    version: CONFIG_EXPORT_VERSION,
-    exportedAt: new Date().toISOString(),
-    config
-  };
+  const payload = createConfigExportPayload(config, {
+    includeTokens,
+    extensionVersion: manifestVersion
+  });
   downloadJsonFile(`bookmark-sync-config-v${manifestVersion}`, payload);
 }
 
-// ---- 提供方选择器（registry 驱动） ----
-
-function populateProviderControls() {
-  fields.provider.textContent = "";
-  providerUi.menu.textContent = "";
-
-  for (const id of PROVIDER_IDS) {
-    const option = document.createElement("option");
-    option.value = id;
-    option.textContent = getProviderLabel(id);
-    fields.provider.appendChild(option);
-
-    const menuBtn = document.createElement("button");
-    menuBtn.type = "button";
-    menuBtn.className = "provider-option";
-    menuBtn.dataset.value = id;
-    menuBtn.setAttribute("role", "option");
-    menuBtn.textContent = getProviderLabel(id);
-    providerUi.menu.appendChild(menuBtn);
-  }
-
-  providerUi.options = Array.from(providerUi.menu.querySelectorAll(".provider-option"));
-}
-
 function syncProviderUi() {
-  if (!providerUi.root) {
-    return;
-  }
-
   const current = fields.provider.value;
-  providerUi.label.textContent = getProviderLabel(current);
-  for (const option of providerUi.options) {
-    option.setAttribute("aria-selected", String(option.dataset.value === current));
+  for (const tab of providerUi.tabs) {
+    const selected = tab.dataset.provider === current;
+    tab.setAttribute("aria-pressed", String(selected));
+    tab.classList.toggle("active", selected);
   }
-}
-
-function openProviderMenu() {
-  providerUi.root.dataset.open = "true";
-  providerUi.trigger.setAttribute("aria-expanded", "true");
-}
-
-function closeProviderMenu() {
-  providerUi.root.dataset.open = "false";
-  providerUi.trigger.setAttribute("aria-expanded", "false");
-}
-
-function isProviderMenuOpen() {
-  return providerUi.root?.dataset.open === "true";
 }
 
 function setProviderValue(nextValue, { emitChange = false } = {}) {
@@ -373,58 +497,19 @@ function setProviderValue(nextValue, { emitChange = false } = {}) {
   }
 }
 
-function bindProviderSelect() {
-  if (!providerUi.root) {
+function bindProviderTabs() {
+  if (providerUi.tabs.length === 0) {
     return;
   }
 
   syncProviderUi();
 
-  providerUi.trigger.addEventListener("click", () => {
-    if (isProviderMenuOpen()) {
-      closeProviderMenu();
-      return;
-    }
-    openProviderMenu();
-  });
-
-  providerUi.trigger.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown") {
-      event.preventDefault();
-      openProviderMenu();
-    }
-  });
-
-  for (const option of providerUi.options) {
-    option.addEventListener("click", () => {
-      setProviderValue(option.dataset.value || "", { emitChange: true });
-      closeProviderMenu();
-      providerUi.trigger.focus();
+  for (const tab of providerUi.tabs) {
+    tab.addEventListener("click", () => {
+      setProviderValue(tab.dataset.provider || "", { emitChange: true });
     });
   }
-
-  document.addEventListener("click", (event) => {
-    if (!isProviderMenuOpen()) {
-      return;
-    }
-    if (providerUi.root.contains(event.target)) {
-      return;
-    }
-    closeProviderMenu();
-  });
-
-  document.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape") {
-      return;
-    }
-    if (!isProviderMenuOpen()) {
-      return;
-    }
-    closeProviderMenu();
-    providerUi.trigger.focus();
-  });
 }
-
 function setTokenVisibility(visible) {
   const isVisible = Boolean(visible);
   fields.token.type = isVisible ? "text" : "password";
@@ -441,102 +526,288 @@ function toggleTokenVisibility() {
   setTokenVisibility(fields.token.type === "password");
 }
 
-// ---- 渲染 ----
-
-function updateHistoryLink(config, provider) {
-  const link = document.getElementById("historyLink");
-  if (!link) {
-    return;
-  }
-
-  const meta = PROVIDERS[provider];
-  const scoped = config?.[provider] || {};
-  const url = meta?.historyUrl?.(scoped) || "";
-  link.classList.toggle("hidden", !url);
-  if (url) {
-    link.href = url;
-  }
-}
-
 function render(config) {
-  const provider = PROVIDER_IDS.includes(config.provider) ? config.provider : "github";
+  const provider = config.provider || "github";
   setProviderValue(provider);
+  fields.theme.value = config.theme || "auto";
+  applySkinChoice(config.skin || "default");
 
-  const persisted = config[provider] || {};
+  const persisted = getProviderScopedConfig(config);
   const draft = scopedDrafts[provider] || {};
   const scoped = {
     ...persisted,
     ...draft
   };
 
-  for (const key of getScopedFieldNames(provider)) {
-    const input = fields[key];
-    if (input) {
-      input.value = scoped[key] || "";
-    }
-  }
-
-  const repoType = isRepoTypeProvider(provider);
-  document.getElementById("repoFields").classList.toggle("hidden", !repoType);
-  document.getElementById("gistFields").classList.toggle("hidden", repoType);
-  document.getElementById("tokenNote").textContent = TOKEN_NOTES[provider] || "";
-  updateHistoryLink(config, provider);
-
+  fields.token.value = scoped.token || "";
+  fields.owner.value = scoped.owner || "";
+  fields.repo.value = scoped.repo || "";
+  fields.branch.value = scoped.branch || "";
+  fields.path.value = scoped.path || "";
   fields.autoSyncEnabled.checked = Boolean(config.autoSyncEnabled);
   fields.autoSyncIntervalMinutes.value = String(normalizeIntervalMinutes(config.autoSyncIntervalMinutes));
-  fields.changeSyncEnabled.checked = Boolean(config.changeSync?.enabled);
-  fields.changeSyncDebounceSeconds.value = String(normalizeDebounceSeconds(config.changeSync?.debounceSeconds));
-  fields.checkRemoteOnStartup.checked = Boolean(config.checkRemoteOnStartup);
-  fields.notifyOnAutoSyncError.checked = config.notify?.onAutoSyncError !== false;
-  fields.notifyOnAutoSyncSuccess.checked = Boolean(config.notify?.onAutoSyncSuccess);
-  fields.notifyOnManualDone.checked = Boolean(config.notify?.onManualDone);
   setTokenVisibility(false);
 
   activeProvider = provider;
 }
 
-function resetDrafts() {
-  for (const id of PROVIDER_IDS) {
-    scopedDrafts[id] = null;
+const PAGE_LABELS = {
+  dashboard: "仪表盘",
+  timeline: "时光胶囊",
+  settings: "基本设置"
+};
+
+const overviewState = {
+  config: null,
+  lastSync: null,
+  counts: null
+};
+
+const timelineState = {
+  commits: [],
+  provider: "",
+  selectedSha: "",
+  loading: false
+};
+
+function showPage(page) {
+  if (!PAGE_LABELS[page]) {
+    return;
+  }
+
+  for (const item of document.querySelectorAll(".nav-item")) {
+    item.classList.toggle("active", item.dataset.page === page);
+  }
+  for (const section of document.querySelectorAll(".page")) {
+    section.classList.toggle("active", section.id === `page-${page}`);
+  }
+
+  const crumb = document.getElementById("crumb");
+  if (crumb) {
+    crumb.textContent = PAGE_LABELS[page];
+  }
+
+  if (page === "timeline" && timelineState.commits.length === 0 && !timelineState.loading) {
+    void loadTimeline();
+  }
+
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function bindNavigation() {
+  document.addEventListener("click", (event) => {
+    const element = event.target instanceof Element ? event.target.closest("[data-page], [data-goto]") : null;
+    if (!element) {
+      return;
+    }
+    showPage(element.dataset.page || element.dataset.goto);
+  });
+}
+
+function isProviderConfigured(config, provider) {
+  const scoped = (config && config[provider]) || {};
+  return Boolean(scoped.token && scoped.owner && scoped.repo);
+}
+
+function describeRepo(scoped) {
+  if (!scoped.owner || !scoped.repo) {
+    return "尚未配置";
+  }
+  return `${scoped.owner}/${scoped.repo} · ${scoped.branch || "main"} · ${scoped.path || "bookmarks/snapshot.json"}`;
+}
+
+function setPill(element, text, tone) {
+  if (!element) {
+    return;
+  }
+  element.className = `pill ${tone}`;
+  element.textContent = text;
+}
+
+function setHeroPill(text, tone) {
+  const pill = document.getElementById("heroPill");
+  if (!pill) {
+    return;
+  }
+  pill.className = `pill ${tone}`;
+  pill.innerHTML = `<i class="status-dot"></i>${text}`;
+}
+
+function renderLastSync() {
+  const lastSync = overviewState.lastSync;
+  const label = document.getElementById("lastSync");
+  const note = document.getElementById("lastSyncNote");
+  const meta = document.getElementById("lastSyncMeta");
+
+  if (!lastSync) {
+    if (label) label.textContent = "最近同步: 无";
+    if (note) note.textContent = "还没有同步记录，先在弹窗里执行一次推送。";
+    if (meta) meta.textContent = "—";
+    return;
+  }
+
+  const directionLabel = lastSync.direction === "pull" ? "拉取" : "推送";
+  const providerLabel = lastSync.provider ? getProviderLabel(lastSync.provider) : "全部平台";
+
+  if (label) label.textContent = `最近同步: ${formatTime(lastSync.at)}`;
+  if (note) {
+    note.textContent = lastSync.noop
+      ? `${directionLabel}完成，远端与本地内容一致，未产生变更。`
+      : `${directionLabel}完成，平台 ${providerLabel}。${lastSync.partial ? "部分平台未完成。" : ""}`;
+  }
+  if (meta) {
+    meta.textContent = `${directionLabel} · ${providerLabel}${lastSync.force ? " · 强制模式" : ""}`;
   }
 }
 
-// ---- 动作 ----
+function renderOverview() {
+  const config = overviewState.config;
+  if (!config) {
+    return;
+  }
+
+  const github = config.github || {};
+  const gitee = config.gitee || {};
+  const githubReady = isProviderConfigured(config, "github");
+  const giteeReady = isProviderConfigured(config, "gitee");
+  const readyCount = Number(githubReady) + Number(giteeReady);
+
+  const badge = document.getElementById("connectionBadge");
+  if (badge) {
+    badge.textContent = readyCount ? `${readyCount} 个平台已配置` : "尚未配置仓库";
+  }
+
+  setHeroPill(readyCount ? "同步就绪" : "等待配置", readyCount ? "green" : "warn");
+  const heroNote = document.getElementById("heroNote");
+  if (heroNote) {
+    heroNote.textContent = readyCount
+      ? `默认平台为 ${getProviderLabel(config.provider || "github")}，当前 ${readyCount} 个平台已完成配置。`
+      : "先在连接配置里填写仓库信息，之后在弹窗中执行推送与拉取。";
+  }
+
+  const githubLine = document.getElementById("githubRepoLine");
+  if (githubLine) githubLine.textContent = describeRepo(github);
+  const giteeLine = document.getElementById("giteeRepoLine");
+  if (giteeLine) giteeLine.textContent = describeRepo(gitee);
+  setPill(document.getElementById("githubStatusPill"), githubReady ? "已配置" : "未配置", githubReady ? "green" : "neutral");
+  setPill(document.getElementById("giteeStatusPill"), giteeReady ? "已配置" : "未配置", giteeReady ? "green" : "neutral");
+
+  const autoMetric = document.getElementById("metricAuto");
+  if (autoMetric) {
+    autoMetric.textContent = config.autoSyncEnabled
+      ? `${normalizeIntervalMinutes(config.autoSyncIntervalMinutes)} 分钟`
+      : "已关闭";
+    autoMetric.classList.toggle("is-empty", !config.autoSyncEnabled);
+  }
+
+  const autoNote = document.getElementById("autoNote");
+  if (autoNote) {
+    autoNote.textContent = config.autoSyncEnabled
+      ? `自动推送已开启，每 ${normalizeIntervalMinutes(config.autoSyncIntervalMinutes)} 分钟一次。`
+      : "自动推送尚未开启，只在你手动操作时同步。";
+  }
+
+  renderLastSync();
+  renderCounts();
+}
+
+function renderRemoteMetric(key, item, configured) {
+  const cap = key === "github" ? "Github" : "Gitee";
+  const value = document.getElementById(`metric${cap}`);
+  const note = document.getElementById(`metric${cap}Note`);
+  if (!value) {
+    return;
+  }
+
+  if (!configured) {
+    value.textContent = "未配置";
+    value.classList.add("is-empty");
+    if (note) note.textContent = "尚未填写仓库信息";
+    return;
+  }
+
+  value.classList.remove("is-empty");
+  if (!item || item.bookmarks === null || item.bookmarks === undefined) {
+    value.textContent = "--";
+    if (note) note.textContent = item?.message || "暂时无法读取云端快照";
+    return;
+  }
+
+  value.textContent = String(item.bookmarks);
+  if (note) note.textContent = "云端快照中的书签数";
+}
+
+function renderCounts() {
+  const counts = overviewState.counts;
+  const local = document.getElementById("metricLocal");
+  if (local) {
+    if (!counts) {
+      local.textContent = "--";
+    } else {
+      local.textContent = String(counts.localBookmarks ?? 0);
+    }
+  }
+
+  const config = overviewState.config;
+  if (!config) {
+    return;
+  }
+
+  const remotes = (counts && counts.remotes) || {};
+  renderRemoteMetric("github", remotes.github, isProviderConfigured(config, "github"));
+  renderRemoteMetric("gitee", remotes.gitee, isProviderConfigured(config, "gitee"));
+}
+
+async function loadCounts() {
+  try {
+    overviewState.counts = await sendMessage("getBookmarkCounts");
+  } catch {
+    overviewState.counts = null;
+  }
+  renderCounts();
+}
 
 async function load() {
-  const config = await send(Actions.GET_CONFIG);
-  resetDrafts();
+  const [config, lastSync] = await Promise.all([sendMessage("getConfig"), sendMessage("getLastSync")]);
+  scopedDrafts.github = null;
+  scopedDrafts.gitee = null;
   render(config);
+  overviewState.config = config;
+  overviewState.lastSync = lastSync || null;
+  renderOverview();
   markClean();
 }
 
 async function save() {
-  const current = await send(Actions.GET_CONFIG);
+  const current = await sendMessage("getConfig");
   const nextConfig = buildNextConfig(current);
-  const saved = await send(Actions.SAVE_CONFIG, { config: nextConfig });
+  await sendMessage("saveConfig", { config: nextConfig });
 
-  // buildNextConfig 已把所有平台草稿一并写入，全部清空。
-  resetDrafts();
-  updateHistoryLink(saved, nextConfig.provider);
+  for (const key of PROVIDER_KEYS) {
+    scopedDrafts[key] = null;
+  }
+  overviewState.config = nextConfig;
+  renderOverview();
   setStatus("设置已保存");
   markClean();
 }
 
 async function testConnection() {
-  const current = await send(Actions.GET_CONFIG);
+  const current = await sendMessage("getConfig");
   const nextConfig = buildNextConfig(current);
-  const result = await send(Actions.TEST_CONNECTION, { config: nextConfig });
-  setStatus(`连接成功: ${result.summary || result.fullName || ""}`);
+  const result = await sendMessage("testConnection", { config: nextConfig });
+  setStatus(`连接成功: ${result.fullName} (默认分支: ${result.defaultBranch})`);
 }
 
 async function exportConfig() {
-  const config = await send(Actions.GET_CONFIG);
-  downloadConfig(config);
-  setStatus("配置导出完成，请妥善保管文件。");
+  const config = await sendMessage("getConfig");
+  const includeTokens = Boolean(document.getElementById("includeTokensInConfigExport")?.checked);
+  downloadConfig(config, { includeTokens });
+  setStatus(includeTokens ? "配置导出完成，文件包含 Token，请妥善保管。" : "配置导出完成，文件未包含 Token。");
 }
 
 async function exportBookmarks() {
-  const snapshot = await send(Actions.EXPORT_LOCAL);
+  const snapshot = await sendMessage("exportLocal");
   downloadJsonFile("bookmark-sync-snapshot", snapshot);
   setStatus("书签快照导出完成。");
 }
@@ -553,7 +824,7 @@ async function importBookmarksFile(event) {
     return;
   }
 
-  setStatus("正在导入书签快照...", false, { autoHide: false });
+  setStatus("正在导入书签快照...");
   const text = await file.text();
 
   let snapshot;
@@ -569,7 +840,7 @@ async function importBookmarksFile(event) {
     return;
   }
 
-  await send(Actions.IMPORT_LOCAL, { snapshot });
+  await sendMessage("importLocal", { snapshot });
   setStatus("书签快照导入完成。");
 }
 
@@ -585,7 +856,7 @@ async function importConfigFile(event) {
     return;
   }
 
-  setStatus("正在导入配置...", false, { autoHide: false });
+  setStatus("正在导入配置...");
   const text = await file.text();
 
   let parsed;
@@ -596,103 +867,46 @@ async function importConfigFile(event) {
   }
 
   const importedConfig = extractImportedConfigPayload(parsed);
-  const current = await send(Actions.GET_CONFIG);
+  const current = await sendMessage("getConfig");
   const nextConfig = normalizeImportedConfig(importedConfig, current);
-  const saved = await send(Actions.SAVE_CONFIG, { config: nextConfig });
+  const saved = await sendMessage("saveConfig", { config: nextConfig });
 
-  resetDrafts();
+  scopedDrafts.github = null;
+  scopedDrafts.gitee = null;
   render(saved);
+  overviewState.config = saved;
+  renderOverview();
+  void loadCounts();
   setStatus("配置导入并保存完成。");
   markClean();
 }
 
-async function clearLocalBookmarks() {
-  const snapshot = await send(Actions.EXPORT_LOCAL);
-  const count = countSnapshotBookmarks(snapshot);
-
-  if (count === 0) {
-    setStatus("本地没有可清空的书签。");
-    return;
-  }
-
-  // 先落地一份下载备份，再确认执行。
-  downloadJsonFile("bookmark-sync-pre-clear-backup", snapshot);
-
-  const ok = window.confirm(
-    `将删除本地 ${count} 条书签（仅标准书签目录）。\n\n已自动下载备份 JSON，扩展内也会保留最近一次清空备份。\n是否继续？`
-  );
-  if (!ok) {
-    setStatus("已取消清空。备份文件已下载，可自行删除。");
-    return;
-  }
-
-  setStatus("正在清空本地书签...", false, { autoHide: false });
-  const result = await send(Actions.CLEAR_LOCAL_BOOKMARKS);
-  setStatus(`已清空本地 ${result.clearedBookmarks} 条书签。如需恢复，请使用"恢复最近清空备份"。`);
-}
-
-async function restoreClearBackup() {
-  const ok = window.confirm("将用最近一次清空前的备份覆盖当前本地书签，是否继续？");
-  if (!ok) {
-    setStatus("已取消恢复。");
-    return;
-  }
-
-  setStatus("正在恢复清空备份...", false, { autoHide: false });
-  const result = await send(Actions.RESTORE_CLEAR_BACKUP);
-  setStatus(`已恢复清空备份（备份时间: ${new Date(result.backupAt).toLocaleString()}）。`);
-}
-
-// 全局开关不属于任何平台，切换平台时不得回滚用户未保存的修改。
-const GLOBAL_TOGGLE_KEYS = [
-  "autoSyncEnabled",
-  "changeSyncEnabled",
-  "checkRemoteOnStartup",
-  "notifyOnAutoSyncError",
-  "notifyOnAutoSyncSuccess",
-  "notifyOnManualDone"
-];
-const GLOBAL_VALUE_KEYS = ["autoSyncIntervalMinutes", "changeSyncDebounceSeconds"];
-
-function captureGlobalFields() {
-  const state = {};
-  for (const key of GLOBAL_TOGGLE_KEYS) {
-    state[key] = fields[key].checked;
-  }
-  for (const key of GLOBAL_VALUE_KEYS) {
-    state[key] = fields[key].value;
-  }
-  return state;
-}
-
-function restoreGlobalFields(state) {
-  for (const key of GLOBAL_TOGGLE_KEYS) {
-    fields[key].checked = state[key];
-  }
-  for (const key of GLOBAL_VALUE_KEYS) {
-    fields[key].value = state[key];
-  }
-}
-
 async function switchProvider() {
-  scopedDrafts[activeProvider] = readScopedInputs(activeProvider);
-  const globals = captureGlobalFields();
+  scopedDrafts[activeProvider] = readScopedInputs();
 
-  const config = await send(Actions.GET_CONFIG);
-  config.provider = fields.provider.value;
-  render(config);
-  restoreGlobalFields(globals);
+  const current = await sendMessage("getConfig");
+  if (current.provider !== fields.provider.value) {
+    const saved = await sendMessage("saveConfig", { config: { ...current, provider: fields.provider.value } });
+    overviewState.config = saved;
+    render(saved);
+    renderOverview();
+  } else {
+    render(current);
+  }
+
+  resetTimeline();
+  if (document.getElementById("page-timeline")?.classList.contains("active")) {
+    void loadTimeline();
+  }
 }
-
-// ---- 绑定与启动 ----
 
 function bindEvents() {
-  bindProviderSelect();
+  bindProviderTabs();
+  bindThemeOptions();
+  bindSkinOptions();
   fields.tokenVisibilityBtn.addEventListener("click", toggleTokenVisibility);
   fields.autoSyncIntervalMinutes.addEventListener("change", normalizeIntervalInput);
   fields.autoSyncIntervalMinutes.addEventListener("blur", normalizeIntervalInput);
-  fields.changeSyncDebounceSeconds.addEventListener("change", normalizeDebounceInput);
-  fields.changeSyncDebounceSeconds.addEventListener("blur", normalizeDebounceInput);
   document.getElementById("saveBtn").addEventListener("click", () => run(save));
   document.getElementById("testBtn").addEventListener("click", () => run(testConnection));
   document.getElementById("exportBookmarksBtn").addEventListener("click", () => run(exportBookmarks));
@@ -701,80 +915,528 @@ function bindEvents() {
   document.getElementById("exportConfigBtn").addEventListener("click", () => run(exportConfig));
   document.getElementById("importConfigBtn").addEventListener("click", importConfigClick);
   document.getElementById("importConfigInput").addEventListener("change", (event) => run(() => importConfigFile(event)));
-  document.getElementById("clearBookmarksBtn").addEventListener("click", () => run(clearLocalBookmarks));
-  document.getElementById("restoreClearBtn").addEventListener("click", () => run(restoreClearBackup));
-  // 平台切换不走 run() 重入门闩：若被门闩拦下，下拉框的值已变而表单
-  // 未跟随，会造成"gist 界面显示 github 字段"的错位保存。切换本身只读。
-  fields.provider.addEventListener("change", () => {
-    switchProvider().catch((error) => {
-      setStatus(error.message || String(error), true);
-    });
-  });
+  fields.provider.addEventListener("change", () => run(switchProvider));
 
-  // Gist 首推自动创建后，引擎会把新 gistId 写回存储；若设置页仍开着，
-  // 表单里还是空值，下一次保存会把它抹掉——监听存储变化实时回填。
-  chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== "local" || !changes.syncConfig) {
-      return;
-    }
-    const nextConfig = changes.syncConfig.newValue;
-    const createdGistId = nextConfig?.gist?.gistId;
-    if (!createdGistId || !fields.gistId || fields.gistId.value.trim()) {
-      return;
-    }
-    fields.gistId.value = createdGistId;
-    if (scopedDrafts.gist && !scopedDrafts.gist.gistId) {
-      scopedDrafts.gist.gistId = createdGistId;
-    }
-    if (fields.provider.value === "gist") {
-      updateHistoryLink(nextConfig, "gist");
-    }
-  });
-
-  const dirtyInputs = [fields.token, fields.owner, fields.repo, fields.branch, fields.path, fields.gistId, fields.fileName];
+  const dirtyInputs = [fields.token, fields.owner, fields.repo, fields.branch, fields.path];
   for (const input of dirtyInputs) {
     input.addEventListener("input", markDirty);
   }
-  const dirtyToggles = [
-    fields.autoSyncEnabled,
-    fields.changeSyncEnabled,
-    fields.checkRemoteOnStartup,
-    fields.notifyOnAutoSyncError,
-    fields.notifyOnAutoSyncSuccess,
-    fields.notifyOnManualDone
-  ];
-  for (const toggle of dirtyToggles) {
-    toggle.addEventListener("change", markDirty);
-  }
+  fields.autoSyncEnabled.addEventListener("change", markDirty);
   fields.autoSyncIntervalMinutes.addEventListener("input", markDirty);
   fields.autoSyncIntervalMinutes.addEventListener("change", markDirty);
-  fields.changeSyncDebounceSeconds.addEventListener("input", markDirty);
-  fields.changeSyncDebounceSeconds.addEventListener("change", markDirty);
+  fields.theme.addEventListener("change", markDirty);
+  fields.skin.addEventListener("change", markDirty);
   document.getElementById("statusCloseBtn").addEventListener("click", hideStatus);
 }
 
-let actionRunning = false;
-
 async function run(fn) {
-  // 动作执行期间禁止重入：清空/导入等破坏性操作被双击二次触发时，
-  // 第二次会用已清空的书签树覆盖掉扩展内备份。
-  if (actionRunning) {
+  if (isRunning) {
+    setStatus("已有操作进行中，请稍候。", true);
     return;
   }
-  actionRunning = true;
+
+  isRunning = true;
+  setActionBusy(true);
   try {
     await fn();
   } catch (error) {
     setStatus(error.message || String(error), true);
   } finally {
-    actionRunning = false;
+    isRunning = false;
+    setActionBusy(false);
+  }
+}
+
+function formatCommitTime(iso) {
+  if (!iso) {
+    return "未知时间";
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return "未知时间";
+  }
+  return date.toLocaleString();
+}
+
+function firstLine(text) {
+  const value = typeof text === "string" ? text.trim() : "";
+  return value.split("\n")[0] || "(无提交信息)";
+}
+
+function shortSha(sha) {
+  return String(sha || "").slice(0, 7);
+}
+
+function setTimelineState(kind, title, description) {
+  const box = document.getElementById("timelineState");
+  const list = document.getElementById("timelineList");
+  if (!box) {
+    return;
+  }
+
+  if (!kind) {
+    box.classList.add("hidden");
+    return;
+  }
+
+  box.className = `empty-state${kind === "error" ? " is-error" : ""}`;
+  box.innerHTML = "";
+
+  const icon = document.createElement("span");
+  icon.className = "empty-icon";
+  icon.textContent = kind === "error" ? "!" : "◷";
+
+  const heading = document.createElement("h4");
+  heading.textContent = title;
+
+  box.append(icon, heading);
+
+  if (description) {
+    const note = document.createElement("p");
+    note.textContent = description;
+    box.append(note);
+  }
+
+  if (list) {
+    list.innerHTML = "";
+  }
+}
+
+function renderTimeline(result) {
+  const list = document.getElementById("timelineList");
+  if (!list) {
+    return;
+  }
+
+  const commits = timelineState.commits;
+  timelineState.selectedSha = "";
+  renderCommitDetail(null);
+
+  if (commits.length === 0) {
+    setTimelineState(
+      "empty",
+      "还没有提交记录",
+      "先在弹窗里执行一次推送，仓库里就会留下第一条快照提交。"
+    );
+    return;
+  }
+
+  setTimelineState(null);
+  list.innerHTML = "";
+
+  for (const commit of commits) {
+    const item = document.createElement("li");
+    item.className = "commit-item";
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "commit-button";
+    button.dataset.sha = commit.sha;
+    button.setAttribute("aria-current", "false");
+
+    const dot = document.createElement("span");
+    dot.className = "commit-dot";
+    dot.textContent = "◷";
+
+    const copy = document.createElement("div");
+    copy.className = "commit-copy";
+
+    const title = document.createElement("h4");
+    title.textContent = firstLine(commit.message);
+
+    const meta = document.createElement("p");
+    meta.textContent = `${formatCommitTime(commit.date)} · ${commit.authorName || commit.authorLogin || "未知作者"}`;
+
+    copy.append(title, meta);
+
+    const sha = document.createElement("span");
+    sha.className = "commit-sha";
+    sha.textContent = shortSha(commit.sha);
+
+    button.append(dot, copy, sha);
+    item.append(button);
+    list.append(item);
+  }
+
+  const note = document.getElementById("timelineProviderNote");
+  if (note) {
+    note.textContent = `${getProviderLabel(result.provider || timelineState.provider)} · 共 ${commits.length} 条提交，最新在前。`;
+  }
+}
+
+function buildDetailRow(label, value) {
+  const wrap = document.createElement("div");
+  const dt = document.createElement("dt");
+  dt.textContent = label;
+  const dd = document.createElement("dd");
+  dd.textContent = value;
+  wrap.append(dt, dd);
+  return wrap;
+}
+
+const CHANGE_KINDS = [
+  { key: "added", label: "新增", marker: "+" },
+  { key: "removed", label: "删除", marker: "−" },
+  { key: "changed", label: "变更", marker: "~" }
+];
+
+function buildChangeChip(kind, label, total) {
+  const chip = document.createElement("span");
+  chip.className = `change-chip ${kind}${total === 0 ? " is-zero" : ""}`;
+  chip.textContent = `${label} ${total}`;
+  return chip;
+}
+
+function buildDiffHunk(label, previous, next) {
+  const hunk = document.createElement("div");
+  hunk.className = "diff-hunk";
+
+  const name = document.createElement("p");
+  name.className = "diff-hunk-label";
+  name.textContent = label;
+
+  const minus = document.createElement("p");
+  minus.className = "diff-line minus";
+  minus.textContent = `- ${previous}`;
+
+  const plus = document.createElement("p");
+  plus.className = "diff-line plus";
+  plus.textContent = `+ ${next}`;
+
+  hunk.append(name, minus, plus);
+  return hunk;
+}
+
+function buildDiffBody(entry) {
+  const body = document.createElement("div");
+  body.className = "diff-body hidden";
+
+  if (entry.previousTitle !== entry.title) {
+    body.append(buildDiffHunk("标题", entry.previousTitle || "(未命名书签)", entry.title || "(未命名书签)"));
+  }
+  if (entry.previousPath !== entry.path) {
+    body.append(buildDiffHunk("位置", entry.previousPath || "根目录", entry.path || "根目录"));
+  }
+  if (entry.previousUrl !== entry.url) {
+    body.append(buildDiffHunk("地址", entry.previousUrl, entry.url));
+  }
+
+  return body;
+}
+
+function buildDiffRow(entry, kind, marker) {
+  const item = document.createElement("li");
+  item.className = `diff-item ${kind}`;
+
+  const expandable = kind === "changed";
+  const row = document.createElement(expandable ? "button" : "div");
+  row.className = "diff-row";
+  if (expandable) {
+    row.type = "button";
+    row.setAttribute("aria-expanded", "false");
+  }
+
+  const badge = document.createElement("span");
+  badge.className = `diff-marker ${kind}`;
+  badge.textContent = marker;
+
+  const copy = document.createElement("span");
+  copy.className = "diff-copy";
+
+  const title = document.createElement("span");
+  title.className = "diff-title";
+  title.textContent = entry.title || entry.url || "(未命名书签)";
+
+  const meta = document.createElement("span");
+  meta.className = "diff-meta";
+  meta.textContent = `${entry.path || "根目录"} · ${entry.url}`;
+
+  copy.append(title, meta);
+  row.append(badge, copy);
+
+  if (expandable) {
+    const caret = document.createElement("span");
+    caret.className = "diff-caret";
+    caret.textContent = "⌄";
+    row.append(caret);
+  }
+
+  item.append(row);
+
+  if (expandable) {
+    item.append(buildDiffBody(entry));
+  }
+
+  return item;
+}
+
+function renderCommitChanges(changes) {
+  const section = document.createElement("section");
+  section.className = "detail-changes";
+
+  const head = document.createElement("div");
+  head.className = "detail-changes-head";
+  const heading = document.createElement("h4");
+  heading.textContent = "书签变更";
+  head.append(heading);
+  section.append(head);
+
+  if (!changes || changes.hasComparison === false) {
+    const note = document.createElement("p");
+    note.className = "detail-note";
+    note.textContent = changes?.message || "无法对比本次提交的书签变化。";
+    section.append(note);
+    return section;
+  }
+
+  head.append(
+    buildChangeChip("added", "新增", changes.added?.total || 0),
+    buildChangeChip("removed", "删除", changes.removed?.total || 0),
+    buildChangeChip("changed", "变更", changes.changed?.total || 0)
+  );
+
+  const list = document.createElement("ul");
+  list.className = "diff-list";
+
+  for (const kind of CHANGE_KINDS) {
+    const group = changes[kind.key];
+    if (!group || !group.total) {
+      continue;
+    }
+    for (const entry of group.items || []) {
+      list.append(buildDiffRow(entry, kind.key, kind.marker));
+    }
+  }
+
+  if (list.childElementCount === 0) {
+    const note = document.createElement("p");
+    note.className = "detail-note";
+    note.textContent = "本次提交没有书签层面的新增、删除或变更。";
+    section.append(note);
+    return section;
+  }
+
+  section.append(list);
+
+  const truncated = CHANGE_KINDS.filter((kind) => changes[kind.key]?.truncated);
+  if (truncated.length > 0) {
+    const more = document.createElement("p");
+    more.className = "change-more";
+    more.textContent = truncated
+      .map((kind) => `${kind.label}仅显示前 ${changes[kind.key].items.length} 条，共 ${changes[kind.key].total} 条`)
+      .join("；");
+    section.append(more);
+  }
+
+  return section;
+}
+
+function renderCommitDetail(detail, state = "empty") {
+  const box = document.getElementById("commitDetail");
+  if (!box) {
+    return;
+  }
+
+  box.innerHTML = "";
+  const heading = document.createElement("h3");
+  heading.textContent = "提交详情";
+  box.append(heading);
+
+  if (!detail) {
+    const hint = document.createElement("p");
+    hint.className = "commit-detail-hint";
+    hint.textContent = "在左侧选择一条提交记录，这里会显示这次提交新增、删除和修改了哪些书签。";
+    box.append(hint);
+    return;
+  }
+
+  if (state === "loading") {
+    const hint = document.createElement("p");
+    hint.className = "commit-detail-hint";
+    hint.textContent = "正在读取提交详情…";
+    box.append(hint);
+    return;
+  }
+
+  const meta = document.createElement("dl");
+  meta.className = "detail-meta";
+  meta.append(
+    buildDetailRow("提交", shortSha(detail.sha)),
+    buildDetailRow("作者", detail.authorName || detail.authorLogin || "未知"),
+    buildDetailRow("时间", formatCommitTime(detail.date)),
+    buildDetailRow("平台", getProviderLabel(detail.provider || timelineState.provider))
+  );
+  if (detail.stats) {
+    meta.append(buildDetailRow("变更", `+${detail.stats.additions} / -${detail.stats.deletions}`));
+  }
+  box.append(meta);
+
+  const message = document.createElement("p");
+  message.className = "detail-message";
+  message.textContent = detail.message || "(无提交信息)";
+  box.append(message);
+
+  box.append(renderCommitChanges(detail.changes));
+
+  if (detail.files && detail.files.length > 0) {
+    const subheading = document.createElement("h4");
+    subheading.className = "detail-subheading";
+    subheading.textContent = "文件变更";
+    box.append(subheading);
+
+    const files = document.createElement("ul");
+    files.className = "detail-files";
+    for (const file of detail.files) {
+      const row = document.createElement("li");
+      row.className = "detail-file";
+
+      const name = document.createElement("span");
+      name.textContent = file.filename;
+
+      const diff = document.createElement("span");
+      diff.className = "detail-diff";
+      const plus = document.createElement("b");
+      plus.className = "plus";
+      plus.textContent = `+${file.additions ?? 0}`;
+      const minus = document.createElement("b");
+      minus.className = "minus";
+      minus.textContent = `-${file.deletions ?? 0}`;
+      diff.append(plus, minus);
+
+      row.append(name, diff);
+      files.append(row);
+    }
+    box.append(files);
+  } else {
+    const note = document.createElement("p");
+    note.className = "detail-note";
+    note.textContent = "该平台没有返回文件级变更，仅展示提交信息。";
+    box.append(note);
+  }
+}
+
+async function selectCommit(sha) {
+  if (!sha || timelineState.selectedSha === sha) {
+    return;
+  }
+
+  timelineState.selectedSha = sha;
+  for (const button of document.querySelectorAll(".commit-button")) {
+    button.setAttribute("aria-current", String(button.dataset.sha === sha));
+  }
+
+  renderCommitDetail(null, "loading");
+  try {
+    const detail = await sendMessage("getCommitDetail", { provider: timelineState.provider, sha });
+    if (timelineState.selectedSha === sha) {
+      renderCommitDetail(detail);
+    }
+  } catch (error) {
+    renderCommitDetail(null);
+    const box = document.getElementById("commitDetail");
+    if (box) {
+      const note = document.createElement("p");
+      note.className = "detail-note";
+      note.textContent = error.message || String(error);
+      box.append(note);
+    }
+  }
+}
+
+function resetTimeline() {
+  timelineState.commits = [];
+  timelineState.selectedSha = "";
+  timelineState.loading = false;
+  renderCommitDetail(null);
+}
+
+async function loadTimeline() {
+  if (timelineState.loading) {
+    return;
+  }
+
+  const provider = fields.provider.value || "github";
+  const scoped = (overviewState.config && overviewState.config[provider]) || {};
+
+  timelineState.loading = true;
+  timelineState.provider = provider;
+  setTimelineState("empty", "正在读取提交历史…", "提交列表来自你配置的仓库，按时间倒序排列。");
+
+  const note = document.getElementById("timelineProviderNote");
+  if (note) {
+    const location = scoped.owner && scoped.repo ? `${scoped.owner}/${scoped.repo}` : "尚未配置仓库";
+    note.textContent = `${getProviderLabel(provider)} · ${location}`;
+  }
+
+  // 远程 v0.2 Provider 仅提供同步所需的内容读写契约，尚未公开提交详情查询。
+  // 保留本地界面的时光胶囊入口，并明确引导到平台的原生历史页，避免调用不存在的消息协议。
+  const historyUrl = PROVIDERS[provider]?.historyUrl?.(scoped) || "";
+  setTimelineState(
+    "empty",
+    "提交历史请在云端查看",
+    historyUrl ? `请打开 ${getProviderLabel(provider)} 的仓库历史页查看完整提交与文件差异。` : "请先完成平台配置后查看云端历史。"
+  );
+  timelineState.loading = false;
+  return;
+
+  try {
+    const result = await sendMessage("getCommitHistory", { provider, limit: 20 });
+    timelineState.commits = result.commits || [];
+    if (result.configured === false) {
+      setTimelineState("empty", "尚未配置仓库", "先在基本设置里填写该平台的仓库信息，再回来查看提交历史。");
+      return;
+    }
+    renderTimeline(result);
+  } catch (error) {
+    timelineState.commits = [];
+    setTimelineState("error", "无法读取提交历史", error.message || String(error));
+  } finally {
+    timelineState.loading = false;
+  }
+}
+
+function bindTimeline() {
+  document.getElementById("timelineRefreshBtn")?.addEventListener("click", () => {
+    timelineState.commits = [];
+    void loadTimeline();
+  });
+
+  document.getElementById("timelineList")?.addEventListener("click", (event) => {
+    const button = event.target instanceof Element ? event.target.closest(".commit-button") : null;
+    if (button) {
+      void selectCommit(button.dataset.sha);
+    }
+  });
+
+  document.getElementById("commitDetail")?.addEventListener("click", (event) => {
+    const row = event.target instanceof Element ? event.target.closest(".diff-row[aria-expanded]") : null;
+    if (!row) {
+      return;
+    }
+
+    const expanded = row.getAttribute("aria-expanded") === "true";
+    row.setAttribute("aria-expanded", String(!expanded));
+    row.parentElement?.querySelector(".diff-body")?.classList.toggle("hidden", expanded);
+  });
+}
+
+function renderVersion() {
+  const version = chrome.runtime.getManifest().version || "";
+  for (const id of ["extVersion", "extVersionFooter"]) {
+    const element = document.getElementById(id);
+    if (element) {
+      element.textContent = `v${version}`;
+    }
   }
 }
 
 async function init() {
-  populateProviderControls();
   bindEvents();
+  bindNavigation();
+  bindTimeline();
+  renderVersion();
   await run(load);
+  void loadCounts();
 }
 
 init();

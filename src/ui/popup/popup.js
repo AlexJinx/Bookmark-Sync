@@ -12,6 +12,24 @@ let refreshCountPending = 0;
 let readyForEntryRefresh = false;
 let lastEntryRefreshAt = 0;
 const ENTRY_REFRESH_DEBOUNCE_MS = 500;
+const themeMedia = window.matchMedia("(prefers-color-scheme: dark)");
+const SKIN_BASE_THEME = {
+  aurora: "dark",
+  neon: "dark",
+  brutal: "light"
+};
+
+function applyTheme(choice, skin = "default") {
+  const base = SKIN_BASE_THEME[skin] || "";
+  const isDark = base ? base === "dark" : choice === "dark" || (choice !== "light" && themeMedia.matches);
+  document.documentElement.dataset.theme = isDark ? "dark" : "light";
+}
+
+applyTheme("auto");
+
+themeMedia.addEventListener("change", () => {
+  applyTheme(currentConfig?.theme || "auto", currentConfig?.skin || "default");
+});
 
 function $(id) {
   return document.getElementById(id);
@@ -215,6 +233,7 @@ function setActionBusy(busy) {
 function renderSyncControls(config) {
   currentConfig = config;
   availableProviders = getConfiguredProviders(config);
+  applyTheme(config.theme || "auto", config.skin || "default");
 
   renderCountChips();
   renderProviderSelect();

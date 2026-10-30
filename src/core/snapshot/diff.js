@@ -135,3 +135,136 @@ export function buildDiffSummary(localSnapshot, remoteSnapshot, sampleLimit = 6)
     }
   };
 }
+
+export function collectBookmarkList(snapshot) {
+  const items = [];
+
+  function walkNodes(nodes, parentPath) {
+    for (const node of nodes || []) {
+      if (!node || typeof node !== "object") {
+        continue;
+      }
+
+      if (node.type === "bookmark") {
+        items.push({
+          title: node.title || "",
+          url: node.url || "",
+          path: parentPath
+        });
+        continue;
+      }
+
+      const title = node.title || "";
+      const folderPath = parentPath ? `${parentPath}/${title}` : title;
+      walkNodes(node.children || [], folderPath);
+    }
+  }
+
+  for (const root of snapshot?.roots || []) {
+    const rootTitle = root?.title || root?.key || "";
+    walkNodes(root?.children || [], rootTitle);
+  }
+
+  return items;
+}
+
+function pushToIndex(map, key, index) {
+  if (!key) {
+    return;
+  }
+  const list = map.get(key);
+  if (list) {
+    list.push(index);
+  } else {
+    map.set(key, [index]);
+  }
+}
+
+function takeUnusedIndex(list, used) {
+  if (!list) {
+    return -1;
+  }
+  for (const index of list) {
+    if (!used.has(index)) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function sliceChangeGroup(items, limit) {
+  return {
+    items: items.slice(0, limit),
+    total: items.length,
+    truncated: items.length > limit
+  };
+}
+
+export function buildBookmarkChanges(previousSnapshot, currentSnapshot, { limit = 30 } = {}) {
+  const previous = collectBookmarkList(previousSnapshot);
+  const current = collectBookmarkList(currentSnapshot);
+  const usedPrevious = new Set();
+  const changed = [];
+  const unmatched = [];
+
+  const previousByUrl = new Map();
+  previous.forEach((item, index) => pushToIndex(previousByUrl, item.url, index));
+
+  for (const item of current) {
+    const index = takeUnusedIndex(previousByUrl.get(item.url), usedPrevious);
+    if (index === -1) {
+      unmatched.push(item);
+      continue;
+    }
+
+    usedPrevious.add(index);
+    const before = previous[index];
+    if (before.title !== item.title || before.path !== item.path) {
+      changed.push({
+        title: item.title,
+        url: item.url,
+        path: item.path,
+        previousTitle: before.title,
+        previousPath: before.path,
+        previousUrl: before.url,
+        kind: "updated"
+      });
+    }
+  }
+
+  const previousByTitle = new Map();
+  previous.forEach((item, index) => {
+    if (!usedPrevious.has(index)) {
+      pushToIndex(previousByTitle, item.title, index);
+    }
+  });
+
+  const added = [];
+  for (const item of unmatched) {
+    const index = takeUnusedIndex(previousByTitle.get(item.title), usedPrevious);
+    if (index === -1) {
+      added.push(item);
+      continue;
+    }
+
+    usedPrevious.add(index);
+    const before = previous[index];
+    changed.push({
+      title: item.title,
+      url: item.url,
+      path: item.path,
+      previousTitle: before.title,
+      previousPath: before.path,
+      previousUrl: before.url,
+      kind: "replaced"
+    });
+  }
+
+  const removed = previous.filter((_, index) => !usedPrevious.has(index));
+
+  return {
+    added: sliceChangeGroup(added, limit),
+    removed: sliceChangeGroup(removed, limit),
+    changed: sliceChangeGroup(changed, limit)
+  };
+}

@@ -5,132 +5,356 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>书签同步设置</title>
     <link rel="stylesheet" href="./options.css" />
+    <link rel="stylesheet" href="./skins.css" />
   </head>
   <body>
-    <main class="layout">
-      <section class="panel">
-        <header class="hero">
-          <div class="hero-title">
-            <h1>书签同步设置</h1>
-            <p>先连接平台，弹窗负责同步操作，当前页负责备份与迁移。</p>
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-icon" aria-hidden="true">↗</span>
+        <span>Bookmark<span class="brand-sub">SYNC WORKSPACE</span></span>
+      </div>
+
+      <div class="nav-label">工作空间</div>
+      <nav aria-label="设置导航">
+        <button type="button" class="nav-item active" data-page="dashboard">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="3" width="7.5" height="7.5" rx="1.5" />
+            <rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5" />
+            <rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5" />
+            <rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5" />
+          </svg>
+          仪表盘
+        </button>
+        <button type="button" class="nav-item" data-page="timeline">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="8" />
+            <path d="M12 8v4l2.5 2.5" />
+          </svg>
+          时光胶囊
+        </button>
+        <button type="button" class="nav-item" data-page="settings">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 3v2.5M12 18.5V21M4.2 7.5l2.2 1.3M17.6 15.2l2.2 1.3M4.2 16.5l2.2-1.3M17.6 8.8l2.2-1.3" />
+          </svg>
+          基本设置
+        </button>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <div class="local-note">
+          <span class="status-dot"></span>由你掌控的数据
+          <small>Token 仅保存在浏览器本地存储中。</small>
+        </div>
+        <div class="sidebar-meta">本地 UI · <span id="extVersion">v0.1.7</span></div>
+      </div>
+    </aside>
+
+    <main>
+      <header>
+        <div class="breadcrumb">设置 <span>/</span> <strong id="crumb">仪表盘</strong></div>
+        <div class="header-actions">
+          <button
+            type="button"
+            id="themeAutoBtn"
+            class="header-icon-btn"
+            aria-pressed="false"
+            aria-label="跟随系统外观"
+            title="跟随系统外观"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="4.5" width="18" height="12" rx="2" />
+              <path d="M9 20h6M12 16.5V20" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            id="themeSwitch"
+            class="theme-switch"
+            role="switch"
+            aria-checked="false"
+            aria-label="深色模式"
+          >
+            <svg class="track-icon sun" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="4.2" />
+              <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17 5.6 18.4" />
+            </svg>
+            <svg class="track-icon moon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M20 13.5A8.5 8.5 0 1 1 10.5 4a6.6 6.6 0 0 0 9.5 9.5Z" />
+            </svg>
+            <span class="theme-knob" aria-hidden="true">
+              <svg class="knob-icon knob-sun" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="4.2" />
+                <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17 5.6 18.4" />
+              </svg>
+              <svg class="knob-icon knob-moon" viewBox="0 0 24 24">
+                <path d="M20 13.5A8.5 8.5 0 1 1 10.5 4a6.6 6.6 0 0 0 9.5 9.5Z" />
+              </svg>
+            </span>
+          </button>
+          <span id="themeHint" class="visually-hidden" aria-live="polite">当前跟随系统：浅色</span>
+          <span id="connectionBadge" class="badge">检测中…</span>
+        </div>
+      </header>
+
+      <div class="content">
+        <section id="page-dashboard" class="page active">
+          <div class="page-heading">
+            <div>
+              <div class="eyebrow">YOUR BOOKMARKS, YOUR REPO</div>
+              <h1>仪表盘<span class="heading-dot">.</span></h1>
+              <p>书签总量、存储方式与同步状态，一屏看完。</p>
+            </div>
+            <button type="button" class="button primary" data-goto="settings">配置仓库 <span>→</span></button>
           </div>
-          <div class="hero-tag">Sync Hub</div>
-        </header>
 
-        <section class="group">
-          <h2>平台连接</h2>
-          <p class="group-desc">选择提供方并填写定位信息。GitHub / Gitee 为仓库模式，Gist 只需 Token 即可开始。</p>
-
-          <label class="field-provider">
-            同步提供方
-            <select id="provider" class="native-provider"></select>
-            <div id="providerSelect" class="provider-select" data-open="false">
-              <button id="providerTrigger" type="button" class="provider-trigger" aria-haspopup="listbox" aria-expanded="false">
-                <span id="providerLabel">GitHub</span>
-                <span class="provider-caret" aria-hidden="true"></span>
-              </button>
-              <div id="providerMenu" class="provider-menu" role="listbox" aria-label="同步提供方"></div>
+          <section class="sync-hero">
+            <div class="hero-copy">
+              <span id="heroPill" class="pill green"><i class="status-dot"></i>等待检测</span>
+              <h2>你的书签，<br />存在你自己的云端。</h2>
+              <p id="heroNote">先在基本设置里填写仓库信息，之后在弹窗中执行推送与拉取。</p>
+              <div class="hero-actions">
+                <button type="button" class="button" data-goto="timeline">查看时光胶囊 <span>→</span></button>
+                <button type="button" class="button" data-goto="settings">基本设置</button>
+              </div>
             </div>
-            <span class="field-note">可随时切换平台，下面的配置按当前提供方分别保存。</span>
-          </label>
-
-          <label class="token-field">
-            Token
-            <div class="token-input-wrap">
-              <input id="token" type="password" placeholder="访问令牌" />
-              <button
-                id="tokenVisibilityBtn"
-                class="token-visibility-btn"
-                type="button"
-                aria-label="显示令牌"
-                aria-pressed="false"
-              >
-                <span class="visually-hidden">显示令牌</span>
-                <svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                  <path d="M1.8 12s3.4-6.2 10.2-6.2s10.2 6.2 10.2 6.2s-3.4 6.2-10.2 6.2S1.8 12 1.8 12z" />
-                  <circle cx="12" cy="12" r="3.2" />
-                </svg>
-                <svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                  <path d="M3 3l18 18" />
-                  <path d="M10.8 6C11.2 5.9 11.6 5.8 12 5.8c6.8 0 10.2 6.2 10.2 6.2c-.6 1-1.6 2.4-3.1 3.6" />
-                  <path d="M6.5 8.5C4.1 10.3 2.8 12 2.8 12s3.4 6.2 10.2 6.2c1.4 0 2.6-.3 3.7-.8" />
-                </svg>
-              </button>
+            <div class="hero-visual" aria-hidden="true">
+              <span class="topo-tag">SYNC MAP <b>LIVE</b></span>
+              <span class="orbit orbit-a"></span>
+              <span class="orbit orbit-b"></span>
+              <span class="orbit orbit-c"></span>
+              <span class="core-radar"></span>
+              <span class="core-ping core-ping-a"></span>
+              <span class="core-ping core-ping-b"></span>
+              <span class="topo-core">
+                <span class="core-check">✓</span>
+                <strong>LOCAL</strong>
+                <small>bookmarks</small>
+              </span>
+              <span class="map-line line-github"><i></i><i></i><i></i></span>
+              <span class="map-line line-gitee"><i></i><i></i><i></i></span>
+              <span class="map-node map-github">
+                <span class="node-icon">GH</span>
+                <span><span class="node-label">REMOTE</span><strong>GitHub</strong></span>
+              </span>
+              <span class="map-node map-gitee">
+                <span class="node-icon">GE</span>
+                <span><span class="node-label">REMOTE</span><strong>Gitee</strong></span>
+              </span>
             </div>
-            <span id="tokenNote" class="field-note"></span>
-          </label>
+          </section>
 
-          <div id="repoFields">
-            <div class="grid two">
-              <label>
-                用户/组织
-                <input id="owner" type="text" placeholder="owner" />
-              </label>
-              <label>
-                仓库名
-                <input id="repo" type="text" placeholder="repo" />
-              </label>
-            </div>
-
-            <div class="grid two">
-              <label>
-                分支
-                <input id="branch" type="text" placeholder="main/master" />
-              </label>
-              <label>
-                文件路径
-                <input id="path" type="text" placeholder="bookmarks/snapshot.json" />
-              </label>
-            </div>
+          <div class="metrics">
+            <article>
+              <span>本地书签 <i>▧</i></span>
+              <div id="metricLocal">--</div>
+              <p>当前浏览器书签总数</p>
+            </article>
+            <article>
+              <span>GitHub 云端 <i>◫</i></span>
+              <div id="metricGithub">--</div>
+              <p id="metricGithubNote">读取云端快照</p>
+            </article>
+            <article>
+              <span>Gitee 云端 <i>◫</i></span>
+              <div id="metricGitee">--</div>
+              <p id="metricGiteeNote">读取云端快照</p>
+            </article>
+            <article>
+              <span>自动推送 <i>◷</i></span>
+              <div id="metricAuto">--</div>
+              <p>按固定间隔推送本地</p>
+            </article>
           </div>
 
-          <div id="gistFields" class="hidden">
-            <div class="grid two">
-              <label>
-                Gist ID（可留空）
-                <input id="gistId" type="text" placeholder="留空则首次推送自动创建私有 Gist" />
-              </label>
-              <label>
-                文件名
-                <input id="fileName" type="text" placeholder="bookmarks.json" />
-              </label>
-            </div>
-            <p class="field-note">留空 Gist ID 时，首次推送会自动创建私有 Gist 并回填到此处。</p>
-          </div>
+          <div class="dashboard-grid">
+            <section class="card">
+              <div class="section-heading">
+                <div>
+                  <h3>存储方式 <span class="subtle">02</span></h3>
+                  <p>书签以 JSON 快照写入你指定的仓库文件。</p>
+                </div>
+                <button type="button" class="text-button" data-goto="settings">管理配置 →</button>
+              </div>
+              <article class="row">
+                <span class="row-icon purple">GH</span>
+                <div class="row-copy">
+                  <h4>GitHub</h4>
+                  <p id="githubRepoLine">尚未配置</p>
+                </div>
+                <span id="githubStatusPill" class="pill neutral">未配置</span>
+              </article>
+              <article class="row">
+                <span class="row-icon mint">GE</span>
+                <div class="row-copy">
+                  <h4>Gitee</h4>
+                  <p id="giteeRepoLine">尚未配置</p>
+                </div>
+                <span id="giteeStatusPill" class="pill neutral">未配置</span>
+              </article>
+              <div class="storage-facts">
+                <span><small>快照格式</small><b>JSON · 树状结构</b></span>
+                <span><small>写入方式</small><b>整文件覆盖</b></span>
+                <span><small>令牌存储</small><b>浏览器本地</b></span>
+              </div>
+            </section>
 
-          <a id="historyLink" class="history-link hidden" target="_blank" rel="noopener">查看云端同步历史 →</a>
+            <section class="card">
+              <div class="section-heading">
+                <div>
+                  <h3>同步状态</h3>
+                  <p>上一次推送或拉取的结果。</p>
+                </div>
+                <button type="button" class="text-button" data-goto="timeline">历史记录 →</button>
+              </div>
+              <article class="timeline-item">
+                <i class="event-icon peach">↻</i>
+                <div>
+                  <h4 id="lastSync">最近同步: 无</h4>
+                  <p id="lastSyncNote">还没有同步记录，先在弹窗里执行一次推送。</p>
+                  <small id="lastSyncMeta">—</small>
+                </div>
+              </article>
+              <div class="quiet-note"><span class="status-dot"></span><span id="autoNote">自动推送尚未开启</span></div>
+            </section>
+          </div>
         </section>
 
-        <section class="group">
-          <h2>自动同步</h2>
-          <p class="group-desc">变更触发：书签修改后延迟推送；定时推送：按固定间隔兜底。两者都只推送、不拉取。</p>
-
-          <div class="grid two">
-            <label class="switch">
-              <input id="changeSyncEnabled" type="checkbox" />
-              书签变更后自动推送
-            </label>
-            <label>
-              变更推送延迟(秒)
-              <input
-                id="changeSyncDebounceSeconds"
-                type="number"
-                min="30"
-                max="300"
-                step="1"
-                aria-describedby="debounceHint"
-              />
-              <span id="debounceHint" class="field-note">30 ~ 300 秒，改动停止后等待该时长再推送。</span>
-            </label>
+        <section id="page-timeline" class="page">
+          <div class="page-heading">
+            <div>
+              <div class="eyebrow">SYNC HISTORY</div>
+              <h1>时光胶囊<span class="heading-dot">.</span></h1>
+              <p>每一次推送都会在仓库留下一条提交，可以回看每次快照的变化。</p>
+            </div>
+            <button id="timelineRefreshBtn" class="button" type="button">刷新记录</button>
           </div>
 
-          <div class="grid two">
-            <label class="switch">
-              <input id="autoSyncEnabled" type="checkbox" />
-              启用定时推送
-            </label>
-            <label>
-              定时推送间隔(分钟)
+          <div class="page-tabs">
+            <div class="platform-tabs" role="group" aria-label="平台数据">
+              <button type="button" class="platform-tab" data-provider="github" aria-pressed="true">GitHub</button>
+              <button type="button" class="platform-tab" data-provider="gitee" aria-pressed="false">Gitee</button>
+            </div>
+            <p id="timelineProviderNote" class="page-tabs-note">正在读取当前平台的提交历史。</p>
+          </div>
+
+          <div class="timeline-layout">
+            <section class="card timeline-panel">
+              <div class="section-heading">
+                <div>
+                  <h3>提交记录</h3>
+                  <p>按时间倒序排列，点击任意一条查看详情。</p>
+                </div>
+              </div>
+              <div id="timelineState" class="empty-state">
+                <span class="empty-icon">◷</span>
+                <h4>正在读取提交历史…</h4>
+                <p>提交列表来自你配置的仓库，按时间倒序排列。</p>
+              </div>
+              <ol id="timelineList" class="timeline-list"></ol>
+            </section>
+
+            <aside id="commitDetail" class="card commit-detail">
+              <h3>提交详情</h3>
+              <p class="commit-detail-hint">在左侧选择一条提交记录，这里会显示这次提交新增、删除和修改了哪些书签。</p>
+            </aside>
+          </div>
+        </section>
+
+        <section id="page-settings" class="page">
+          <div class="page-heading">
+            <div>
+              <div class="eyebrow">WORKSPACE SETTINGS</div>
+              <h1>基本设置<span class="heading-dot">.</span></h1>
+              <p>仓库连接、自动推送与备份迁移都集中在这里。</p>
+            </div>
+            <button type="button" class="button primary" data-goto="dashboard">回到仪表盘 <span>→</span></button>
+          </div>
+
+          <div class="split">
+            <section class="card">
+              <div class="field-provider">
+                <span class="field-label">同步提供方</span>
+                <input id="provider" type="hidden" value="github" />
+                <div class="platform-tabs" role="group" aria-label="同步提供方">
+                  <button type="button" class="platform-tab" data-provider="github" aria-pressed="true">GitHub</button>
+                  <button type="button" class="platform-tab" data-provider="gitee" aria-pressed="false">Gitee</button>
+                </div>
+                <span class="field-note">切换标签即可分别编辑两个平台的仓库配置，切换会自动保存。</span>
+              </div>
+
+              <label class="token-field">
+                Token
+                <div class="token-input-wrap">
+                  <input id="token" type="password" placeholder="访问令牌" />
+                  <button
+                    id="tokenVisibilityBtn"
+                    class="token-visibility-btn"
+                    type="button"
+                    aria-label="显示令牌"
+                    aria-pressed="false"
+                  >
+                    <span class="visually-hidden">显示令牌</span>
+                    <svg class="eye-icon eye-open" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                      <path d="M1.8 12s3.4-6.2 10.2-6.2s10.2 6.2 10.2 6.2s-3.4 6.2-10.2 6.2S1.8 12 1.8 12z" />
+                      <circle cx="12" cy="12" r="3.2" />
+                    </svg>
+                    <svg class="eye-icon eye-closed" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                      <path d="M3 3l18 18" />
+                      <path d="M10.8 6C11.2 5.9 11.6 5.8 12 5.8c6.8 0 10.2 6.2 10.2 6.2c-.6 1-1.6 2.4-3.1 3.6" />
+                      <path d="M6.5 8.5C4.1 10.3 2.8 12 2.8 12s3.4 6.2 10.2 6.2c1.4 0 2.6-.3 3.7-.8" />
+                    </svg>
+                  </button>
+                </div>
+                <span class="field-note">请粘贴原始 Token，不要带 <code>Bearer</code> 或 <code>token</code> 前缀。</span>
+              </label>
+
+              <div class="grid two">
+                <label>
+                  用户/组织
+                  <input id="owner" type="text" placeholder="owner" />
+                </label>
+                <label>
+                  仓库名
+                  <input id="repo" type="text" placeholder="repo" />
+                </label>
+              </div>
+
+              <div class="grid two">
+                <label>
+                  分支
+                  <input id="branch" type="text" placeholder="main / master" />
+                </label>
+                <label>
+                  文件路径
+                  <input id="path" type="text" placeholder="bookmarks/snapshot.json" />
+                </label>
+              </div>
+            </section>
+
+            <aside class="card side-notes">
+              <h3>权限与格式</h3>
+              <p class="side-note"><b>GitHub</b> 建议使用 Fine-grained token，仅授予目标仓库的 Contents: Read and write。</p>
+              <p class="side-note"><b>Gitee</b> 令牌需要仓库读写权限，私有仓库同样可用。</p>
+              <p class="side-note"><b>路径</b> 首次推送会自动创建快照文件，无需手动预建。</p>
+              <p class="side-note"><b>分支</b> 必须是已存在的分支，默认 main 或 master。</p>
+              <p class="side-note"><b>历史</b> 时光胶囊读取该文件的提交记录，路径改动后历史会随之变化。</p>
+            </aside>
+          </div>
+
+          <section class="card auto-card">
+            <div class="section-heading">
+              <div>
+                <h3>自动推送</h3>
+                <p>只做推送，不会自动拉取，也不会在冲突时强制覆盖。</p>
+              </div>
+              <label class="switch">
+                <input id="autoSyncEnabled" type="checkbox" />
+                启用自动推送
+              </label>
+            </div>
+            <label class="interval-field">
+              自动推送间隔（分钟）
               <input
                 id="autoSyncIntervalMinutes"
                 type="number"
@@ -140,45 +364,48 @@
               />
               <span id="autoSyncIntervalHint" class="field-note">最小 15 分钟，低于该值会自动调整为 15。</span>
             </label>
-          </div>
+          </section>
 
-          <label class="switch">
-            <input id="checkRemoteOnStartup" type="checkbox" />
-            浏览器启动时检查云端更新（仅提醒，不自动拉取）
-          </label>
-        </section>
+          <section class="card skin-card">
+            <div class="section-heading">
+              <div>
+                <h3>界面风格</h3>
+                <p>四套配色方案。极光玻璃、霓虹终端为深色基底，纸感硬边为浅色基底，选定后明暗开关由风格接管。</p>
+              </div>
+            </div>
+            <div class="skin-picker" role="radiogroup" aria-label="界面风格">
+              <button type="button" class="skin-option" data-skin-choice="default" role="radio" aria-checked="true">
+                <span class="skin-preview preview-default" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span class="skin-name">默认</span>
+                <span class="skin-desc">浅紫 · 可切明暗</span>
+              </button>
+              <button type="button" class="skin-option" data-skin-choice="aurora" role="radio" aria-checked="false">
+                <span class="skin-preview preview-aurora" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span class="skin-name">极光玻璃</span>
+                <span class="skin-desc">深空 · 玻璃拟态</span>
+              </button>
+              <button type="button" class="skin-option" data-skin-choice="neon" role="radio" aria-checked="false">
+                <span class="skin-preview preview-neon" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span class="skin-name">霓虹终端</span>
+                <span class="skin-desc">荧光 · 网格扫描</span>
+              </button>
+              <button type="button" class="skin-option" data-skin-choice="brutal" role="radio" aria-checked="false">
+                <span class="skin-preview preview-brutal" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span class="skin-name">纸感硬边</span>
+                <span class="skin-desc">纸感 · 硬投影</span>
+              </button>
+            </div>
+            <span id="skinNote" class="field-note">当前为默认风格，可使用右上角的明暗开关。</span>
+            <input id="skin" type="hidden" value="default" />
+          </section>
 
-        <section class="group">
-          <h2>通知</h2>
-          <p class="group-desc">自动任务在后台运行，通过系统通知和图标徽章反馈结果。</p>
-          <div class="notify-grid">
-            <label class="switch">
-              <input id="notifyOnAutoSyncError" type="checkbox" />
-              自动推送失败 / 冲突时通知
-            </label>
-            <label class="switch">
-              <input id="notifyOnAutoSyncSuccess" type="checkbox" />
-              自动推送成功时通知
-            </label>
-            <label class="switch">
-              <input id="notifyOnManualDone" type="checkbox" />
-              手动推送 / 拉取完成时通知
-            </label>
-          </div>
-        </section>
+          <input id="theme" type="hidden" value="auto" />
 
-        <div class="quick-actions">
-          <p id="dirtyHint" class="dirty-hint">所有更改已保存</p>
-          <div class="actions quick-buttons">
-            <button id="saveBtn" class="main">保存设置</button>
-            <button id="testBtn" class="secondary">测试连接</button>
-          </div>
-        </div>
-
-        <section class="group backup-hub">
-          <div class="backup-head">
-            <h2>备份与迁移</h2>
-            <p class="group-desc">书签数据与配置参数统一管理，迁移设备时可一次完成。</p>
+          <div class="section-heading standalone">
+            <div>
+              <h3>备份与迁移</h3>
+              <p>书签快照用于离线恢复，配置参数用于换设备时一次性搬走。</p>
+            </div>
           </div>
 
           <div class="backup-grid">
@@ -187,44 +414,51 @@
               <h3>导出 / 导入书签快照</h3>
               <p class="backup-desc">用于离线备份和恢复，不包含平台令牌。</p>
               <div class="backup-actions">
-                <button id="exportBookmarksBtn" class="ghost" type="button">导出书签 JSON</button>
-                <button id="importBookmarksBtn" class="ghost" type="button">导入书签 JSON</button>
+                <button id="exportBookmarksBtn" class="button" type="button">导出书签 JSON</button>
+                <button id="importBookmarksBtn" class="button" type="button">导入书签 JSON</button>
               </div>
             </article>
 
             <article class="backup-card secure">
               <p class="backup-badge">配置参数</p>
               <h3>导出 / 导入平台配置</h3>
-              <p class="backup-desc">包含 Token、平台定位与自动同步参数，请妥善保管文件。</p>
+              <p class="backup-desc">默认不含 Token，可安全迁移仓库定位与自动同步参数。</p>
+              <label class="config-token-export">
+                <input id="includeTokensInConfigExport" type="checkbox" />
+                导出时包含 Token
+              </label>
               <div class="backup-actions">
-                <button id="exportConfigBtn" class="secondary" type="button">导出配置 JSON</button>
-                <button id="importConfigBtn" class="secondary" type="button">导入配置 JSON</button>
+                <button id="exportConfigBtn" class="button primary" type="button">导出配置 JSON</button>
+                <button id="importConfigBtn" class="button" type="button">导入配置 JSON</button>
               </div>
             </article>
           </div>
 
+          <p class="backup-note">
+            安全提示：默认导出不包含访问令牌；勾选「导出时包含 Token」后，请仅在可信设备与私有通道中保存和传输。
+          </p>
+
           <input id="importBookmarksInput" type="file" accept="application/json" hidden />
           <input id="importConfigInput" type="file" accept="application/json" hidden />
-          <p class="field-note backup-note">安全提示：配置文件包含访问令牌，仅建议在可信设备与私有通道中保存和传输。</p>
         </section>
 
-        <section class="group danger-zone">
-          <h2>危险操作</h2>
-          <p class="group-desc">清空前会自动下载备份 JSON，并在扩展内保留最近一次清空备份用于恢复。</p>
-          <div class="danger-actions">
-            <button id="clearBookmarksBtn" class="danger" type="button">清空本地书签</button>
-            <button id="restoreClearBtn" class="ghost" type="button">恢复最近清空备份</button>
-          </div>
-          <p class="field-note">仅清空书签栏 / 其他书签 / 移动设备书签三个标准目录，不影响 Edge 工作区等浏览器托管目录，也不会改动云端数据。</p>
-        </section>
+        <footer>
+          <span><span class="status-dot"></span>本地设置页 · 数据写入你自己的仓库</span>
+          <span>Bookmark Sync <span id="extVersionFooter">v0.1.7</span></span>
+        </footer>
+      </div>
 
-      </section>
-
-      <div id="status" class="status hidden" role="status" aria-live="polite">
-        <span id="statusText"></span>
-        <button id="statusCloseBtn" class="status-close" type="button" aria-label="关闭提示">×</button>
+      <div class="savebar">
+        <p id="dirtyHint" class="dirty-hint">所有更改已保存</p>
+        <button id="saveBtn" class="button primary" type="button">保存设置</button>
+        <button id="testBtn" class="button" type="button">测试连接</button>
       </div>
     </main>
+
+    <div id="status" class="status hidden" role="status" aria-live="polite">
+      <span id="statusText"></span>
+      <button id="statusCloseBtn" class="status-close" type="button" aria-label="关闭提示">×</button>
+    </div>
 
     <script type="module" src="./options.js"></script>
   </body>

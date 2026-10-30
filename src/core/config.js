@@ -17,6 +17,8 @@ export const DEFAULT_CONFIG = {
   autoSyncEnabled: false,
   autoSyncIntervalMinutes: 60,
   syncAllProviders: false,
+  theme: "auto",
+  skin: "default",
   changeSync: {
     enabled: false,
     debounceSeconds: 60

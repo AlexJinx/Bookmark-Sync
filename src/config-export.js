@@ -1,0 +1,27 @@
+export const CONFIG_EXPORT_TYPE = "bookmark-sync-config";
+export const CONFIG_EXPORT_VERSION = 1;
+
+function withoutTokens(config) {
+  const cloned = structuredClone(config || {});
+  for (const provider of ["github", "gitee", "gist"]) {
+    if (!cloned[provider] || typeof cloned[provider] !== "object") {
+      continue;
+    }
+    delete cloned[provider].token;
+  }
+  return cloned;
+}
+
+export function createConfigExportPayload(
+  config,
+  { includeTokens = false, extensionVersion = "unknown", exportedAt = new Date().toISOString() } = {}
+) {
+  return {
+    type: CONFIG_EXPORT_TYPE,
+    version: CONFIG_EXPORT_VERSION,
+    extensionVersion,
+    exportedAt,
+    containsTokens: Boolean(includeTokens),
+    config: includeTokens ? structuredClone(config || {}) : withoutTokens(config)
+  };
+}
