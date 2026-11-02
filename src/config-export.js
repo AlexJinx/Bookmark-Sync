@@ -14,7 +14,7 @@ function withoutTokens(config) {
 
 export function createConfigExportPayload(
   config,
-  { includeTokens = false, extensionVersion = "unknown", exportedAt = new Date().toISOString() } = {}
+  { includeTokens = true, extensionVersion = "unknown", exportedAt = new Date().toISOString() } = {}
 ) {
   return {
     type: CONFIG_EXPORT_TYPE,

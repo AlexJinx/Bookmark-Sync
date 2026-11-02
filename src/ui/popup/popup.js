@@ -2,6 +2,8 @@ import { Actions, RemoteStatus } from "../../core/actions.js";
 import { getConfiguredProviders } from "../../core/config.js";
 import { PROVIDERS, getProviderLabel } from "../../providers/registry.js";
 import { send, isConflictError } from "../shared/messaging.js";
+import { openConnectionSettings } from "../shared/settings-navigation.js";
+import { effectiveAppearance } from "../shared/appearance-policy.js";
 
 const NO_PROVIDER_MESSAGE = "未检测到已配置平台，请先打开设置完成平台配置。";
 
@@ -18,6 +20,7 @@ const SKIN_BASE_THEME = {
   neon: "dark",
   brutal: "light"
 };
+const SKIN_CHOICES = ["default", ...Object.keys(SKIN_BASE_THEME)];
 
 function applyTheme(choice, skin = "default") {
   const base = SKIN_BASE_THEME[skin] || "";
@@ -25,10 +28,17 @@ function applyTheme(choice, skin = "default") {
   document.documentElement.dataset.theme = isDark ? "dark" : "light";
 }
 
-applyTheme("auto");
+function applyAppearance(config = {}) {
+  config = effectiveAppearance(config);
+  const skin = SKIN_CHOICES.includes(config.skin) ? config.skin : "default";
+  document.documentElement.dataset.skin = skin;
+  applyTheme(config.theme || "auto", skin);
+}
+
+applyAppearance();
 
 themeMedia.addEventListener("change", () => {
-  applyTheme(currentConfig?.theme || "auto", currentConfig?.skin || "default");
+  applyAppearance(currentConfig);
 });
 
 function $(id) {
@@ -47,7 +57,7 @@ function setStatus(message, isError = false) {
   }
 
   status.textContent = text;
-  status.style.color = isError ? "#b42318" : "#1a1e24";
+  status.classList.toggle("is-error", isError);
   status.classList.remove("hidden");
 }
 
@@ -168,10 +178,10 @@ function updateTargetHints() {
   const pullHint = $("pullTargetHint");
 
   if (pushHint) {
-    pushHint.textContent = isPushAllMode() ? "推送目标：全部已配置平台" : `推送目标：${label}`;
+    pushHint.textContent = provider ? (isPushAllMode() ? "全部已配置平台" : label) : "";
   }
   if (pullHint) {
-    pullHint.textContent = `拉取来源：${label}`;
+    pullHint.textContent = provider ? label : "";
   }
 }
 
@@ -233,7 +243,7 @@ function setActionBusy(busy) {
 function renderSyncControls(config) {
   currentConfig = config;
   availableProviders = getConfiguredProviders(config);
-  applyTheme(config.theme || "auto", config.skin || "default");
+  applyAppearance(config);
 
   renderCountChips();
   renderProviderSelect();
@@ -242,13 +252,15 @@ function renderSyncControls(config) {
 
   // BookmarkHub 式零配置体验：只有一个平台时隐藏全部高级选项。
   $("advanced").classList.toggle("hidden", availableProviders.length <= 1);
+  $("connectPanel").classList.toggle("hidden", availableProviders.length > 0);
+  $("syncPanel").classList.toggle("hidden", availableProviders.length === 0);
 
   updateTargetHints();
   updateHistoryLink();
   setActionBusy(isRunning);
 
   if (availableProviders.length === 0) {
-    setStatus(NO_PROVIDER_MESSAGE, true);
+    setStatus("");
     return;
   }
 
@@ -463,12 +475,6 @@ async function refreshUiState() {
 
 // ---- 推送 / 拉取 ----
 
-function buildConflictMessage(error, suffix) {
-  const summary = error?.details?.summary || error?.message || "检测到冲突";
-  const detailText = error?.details?.duplicates ? "已在下方显示重复目录样例。" : "已在下方显示差异预览。";
-  return `${summary}\n\n${detailText}\n${suffix}`;
-}
-
 function formatProviderCountDelta(provider, beforeCounts, afterCounts) {
   const label = getProviderLabel(provider);
   const before = beforeCounts?.remotes?.[provider]?.bookmarks;
@@ -479,14 +485,14 @@ function formatProviderCountDelta(provider, beforeCounts, afterCounts) {
   return `${label} 书签数 ${before} -> ${after}`;
 }
 
-function buildPushSuccessMessage({ pushAll, provider, force, result, beforeCounts, afterCounts }) {
+function buildPushSuccessMessage({ pushAll, provider, result, beforeCounts, afterCounts }) {
   if (pushAll) {
     if (result?.noop) {
       return "所有平台均已同步，无需推送";
     }
 
     const parts = availableProviders.map((item) => formatProviderCountDelta(item, beforeCounts, afterCounts));
-    return force ? `强制推送到所有平台完成（${parts.join("；")}）` : `已推送到所有平台（${parts.join("；")}）`;
+    return `已推送到所有平台（${parts.join("；")}）`;
   }
 
   const label = getProviderLabel(provider);
@@ -495,7 +501,7 @@ function buildPushSuccessMessage({ pushAll, provider, force, result, beforeCount
   }
 
   const delta = formatProviderCountDelta(provider, beforeCounts, afterCounts);
-  return force ? `${label} 强制推送完成（${delta}）` : `${label} 推送完成（${delta}）`;
+  return `${label} 推送完成（${delta}）`;
 }
 
 async function persistTargetSettings() {
@@ -539,7 +545,7 @@ async function onPush() {
   try {
     const result = await send(Actions.PUSH_TO_REMOTE, payload);
     const { counts: afterCounts } = await refreshSyncSummary();
-    setStatus(buildPushSuccessMessage({ pushAll, provider, force: false, result, beforeCounts, afterCounts }));
+    setStatus(buildPushSuccessMessage({ pushAll, provider, result, beforeCounts, afterCounts }));
     setSyncDot("idle");
   } catch (error) {
     if (!isConflictError(error)) {
@@ -547,19 +553,12 @@ async function onPush() {
     }
 
     renderConflictPreview(error);
-    const ok = window.confirm(buildConflictMessage(error, "是否强制推送并覆盖远端内容？"));
-    if (!ok) {
-      setStatus("检测到冲突，已取消推送", true);
-      return;
-    }
-
-    setStatus(pushAll ? "正在强制推送到所有平台..." : "正在强制推送...");
-    const result = await send(Actions.PUSH_TO_REMOTE, { ...payload, force: true });
-    clearConflictPreview();
-
-    const { counts: afterCounts } = await refreshSyncSummary();
-    setStatus(buildPushSuccessMessage({ pushAll, provider, force: true, result, beforeCounts, afterCounts }));
-    setSyncDot("idle");
+    const conflictProvider = error.details?.provider || provider;
+    await chrome.tabs.create({
+      url: chrome.runtime.getURL(`src/ui/merge/merge.html?provider=${encodeURIComponent(conflictProvider)}`),
+      active: true
+    });
+    setStatus("已打开冲突解决页，本次未强制覆盖。多平台推送可能已有部分成功，请分别处理冲突。");
   }
 }
 
@@ -588,18 +587,11 @@ async function onPull() {
     }
 
     renderConflictPreview(error);
-    const ok = window.confirm(buildConflictMessage(error, "是否强制拉取并覆盖本地书签？"));
-    if (!ok) {
-      setStatus("检测到冲突，已取消拉取", true);
-      return;
-    }
-
-    setStatus("正在强制拉取...");
-    const result = await send(Actions.PULL_FROM_REMOTE, { force: true, provider });
-    clearConflictPreview();
-    setStatus(result?.noop ? "已是最新，无需覆盖" : "强制拉取完成");
-    await refreshSyncSummary();
-    setSyncDot("idle");
+    await chrome.tabs.create({
+      url: chrome.runtime.getURL(`src/ui/merge/merge.html?provider=${encodeURIComponent(provider)}&direction=pull`),
+      active: true
+    });
+    setStatus("已打开拉取冲突解决页，请选择要保留的书签。本次未覆盖本地。");
   }
 }
 
@@ -618,11 +610,30 @@ function bindEvents() {
   $("pushBtn").addEventListener("click", () => run(onPush));
   $("pullBtn").addEventListener("click", () => run(onPull));
   $("optionsBtn").addEventListener("click", () => chrome.runtime.openOptionsPage());
+  $("connectBtn").addEventListener("click", async () => {
+    const button = $("connectBtn");
+    button.disabled = true;
+    try {
+      await openConnectionSettings();
+      window.close();
+    } catch (error) {
+      setStatus(`无法打开仓库设置：${error.message || String(error)}`, true);
+    } finally {
+      button.disabled = false;
+    }
+  });
   $("defaultProvider").addEventListener("change", onTargetChanged);
   $("pushAllChk").addEventListener("change", onTargetChanged);
   window.addEventListener("focus", triggerEntryRefresh);
   window.addEventListener("pageshow", triggerEntryRefresh);
   document.addEventListener("visibilitychange", triggerEntryRefresh);
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "local" || !changes.syncConfig?.newValue) {
+      return;
+    }
+    currentConfig = { ...currentConfig, theme: changes.syncConfig.newValue.theme, skin: changes.syncConfig.newValue.skin };
+    applyAppearance(changes.syncConfig.newValue);
+  });
 }
 
 async function run(fn) {

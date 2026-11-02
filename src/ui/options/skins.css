@@ -245,8 +245,8 @@
 }
 
 :root[data-skin="aurora"] .platform-tabs {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
+  border: 0;
+  background: transparent;
 }
 
 :root[data-skin="aurora"] .platform-tab {
@@ -254,9 +254,9 @@
 }
 
 :root[data-skin="aurora"] .platform-tab.active {
-  background: rgba(139, 123, 255, 0.2);
+  background: transparent;
   color: #ded9ff;
-  box-shadow: inset 0 0 0 1px rgba(139, 123, 255, 0.3);
+  box-shadow: none;
 }
 
 :root[data-skin="aurora"] .commit-button {
@@ -890,20 +890,19 @@
 }
 
 :root[data-skin="neon"] .platform-tabs {
-  border: 1px solid #1e332a;
-  border-radius: 3px;
-  background: #080d0f;
+  border: 0;
+  background: transparent;
 }
 
 :root[data-skin="neon"] .platform-tab {
-  border-radius: 2px;
+  border-radius: 0;
   color: #7d9a90;
 }
 
 :root[data-skin="neon"] .platform-tab.active {
-  background: var(--accent);
-  color: #05070a;
-  box-shadow: 0 0 18px rgba(182, 255, 60, 0.35);
+  background: transparent;
+  color: var(--accent);
+  box-shadow: none;
 }
 
 :root[data-skin="neon"] .page-tabs-note {
@@ -1581,20 +1580,19 @@
 }
 
 :root[data-skin="brutal"] .platform-tabs {
-  border: 2px solid #15130f;
-  border-radius: 4px;
-  background: #f7f2e6;
+  border: 0;
+  background: transparent;
 }
 
 :root[data-skin="brutal"] .platform-tab {
-  border-radius: 2px;
+  border-radius: 0;
   color: #4a453b;
   font-weight: 650;
 }
 
 :root[data-skin="brutal"] .platform-tab.active {
-  background: #15130f;
-  color: #fffdf6;
+  background: transparent;
+  color: var(--accent);
   box-shadow: none;
 }
 

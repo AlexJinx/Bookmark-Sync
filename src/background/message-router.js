@@ -1,15 +1,20 @@
 import { Actions } from "../core/actions.js";
+import { getCommitHistory, getCommitDetail } from "./history.js";
 import { getConfig, saveConfig, getLastSync, getClearBackup, saveClearBackup } from "../core/storage.js";
 import { exportSnapshot, importSnapshot, clearAllBookmarks } from "../core/bookmarks/service.js";
 import { countSnapshotBookmarks } from "../core/snapshot/count.js";
 import { createProviderClient } from "../providers/registry.js";
-import { pushToRemote, pullFromRemote, getBookmarkCounts } from "./sync-engine.js";
+import { pushToRemote, pullFromRemote, getBookmarkCounts, getMergePreview, submitMerge } from "./sync-engine.js";
 import { scheduleAutoSync } from "./scheduler.js";
 import { acknowledgeBadge, clearPendingBadge, BadgeState } from "./badge.js";
 import { hasPendingChangePush } from "./triggers.js";
 import { emit, Events } from "./events.js";
 
 const handlers = {
+  getCommitHistory,
+  getCommitDetail,
+  getMergePreview: (message) => getMergePreview(message.provider),
+  submitMerge: (message) => submitMerge(message),
   [Actions.GET_CONFIG]: () => getConfig(),
 
   [Actions.SAVE_CONFIG]: async (message) => {
@@ -34,7 +39,6 @@ const handlers = {
 
   [Actions.PUSH_TO_REMOTE]: async (message) => {
     const result = await pushToRemote({
-      force: Boolean(message.force),
       provider: typeof message.provider === "string" ? message.provider : "",
       syncAllProviders: typeof message.syncAllProviders === "boolean" ? message.syncAllProviders : null
     });
@@ -44,7 +48,6 @@ const handlers = {
 
   [Actions.PULL_FROM_REMOTE]: async (message) => {
     const result = await pullFromRemote({
-      force: Boolean(message.force),
       provider: typeof message.provider === "string" ? message.provider : ""
     });
     await emit(Events.MANUAL_SYNC_SUCCESS, { direction: "pull", result });

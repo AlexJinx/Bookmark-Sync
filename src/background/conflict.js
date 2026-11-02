@@ -32,11 +32,7 @@ export function withPreview(details, localSnapshot, remoteSnapshot) {
   };
 }
 
-export function ensurePushNoConflict({ force, syncState, remote, localHash, remoteHash, localSnapshot, remoteSnapshot }) {
-  if (force) {
-    return;
-  }
-
+export function ensurePushNoConflict({ syncState, remote, localHash, remoteHash, localSnapshot, remoteSnapshot }) {
   if (remote.exists && remoteHash === localHash) {
     return;
   }
@@ -105,11 +101,7 @@ export function ensurePushNoConflict({ force, syncState, remote, localHash, remo
   });
 }
 
-export function ensurePullNoConflict({ force, syncState, remote, localHash, remoteHash, localSnapshot, remoteSnapshot }) {
-  if (force) {
-    return;
-  }
-
+export function ensurePullNoConflict({ syncState, remote, localHash, remoteHash, localSnapshot, remoteSnapshot }) {
   if (localHash === remoteHash) {
     return;
   }

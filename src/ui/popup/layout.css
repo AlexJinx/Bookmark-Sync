@@ -1,0 +1,152 @@
+/* Compact layout shared by all appearance palettes. */
+body {
+  width: 368px;
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+  background: var(--surface);
+}
+
+.panel { padding: 22px; }
+.panel h1, .panel h2 { font-family: inherit; }
+
+:root .panel .hero {
+  padding: 0 0 22px;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+:root .panel .mark {
+  width: 32px;
+  height: 32px;
+  flex-basis: 32px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: none;
+}
+
+.hero-text h1 { font-size: 15px; letter-spacing: 0; font-weight: 600; }
+.mark svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.collection-heading { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--muted); padding-top: 18px; border-top: 1px solid var(--line); }
+.collection-label { padding: 3px 7px; border-radius: 5px; font-size: 10px; background: var(--surface-soft); }
+.hero-text p { font-size: 9px; letter-spacing: 1.8px; }
+
+.status-strip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 0 22px;
+  color: var(--muted);
+}
+
+.last-text { margin: 0; font-size: 10px; line-height: 1.6; }
+.sync-dot { width: 5px; height: 5px; flex: 0 0 5px; border-radius: 50%; background: var(--muted); }
+.sync-dot[data-state="pending"] { background: var(--peach); }
+
+.counts {
+  display: flex;
+  gap: 0;
+  margin: 14px 0 14px;
+}
+
+:root .panel .count-chip {
+  flex: 1;
+  min-width: 0;
+  padding: 0 10px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+:root .panel .count-chip:first-child { padding-left: 0; border-left: 0; }
+.count-chip:only-child { display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 8px; }
+.count-tag { font-size: 11px; }
+.count-value { margin-top: 8px; font-size: 26px; font-variant-numeric: tabular-nums; }
+.count-chip:only-child .count-value { margin: 0; font-size: 56px; line-height: 1; letter-spacing: -2px; font-weight: 500; }
+:root .panel .count-chip:first-child .count-value { color: var(--text); }
+.count-chip:only-child .count-tag { font-size: 11px; }
+
+:root .panel .section {
+  padding: 16px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--surface-soft);
+  box-shadow: none;
+}
+
+.actions { grid-template-columns: 1fr 1fr; gap: 10px; margin: 0; }
+.action-item { min-width: 0; }
+:root .panel .actions button { min-height: 68px; border-radius: 8px; box-shadow: none; }
+.action-arrow { display: block; margin-bottom: 4px; font-size: 23px; font-weight: 400; line-height: 1; }
+:root .panel .actions .danger { border-color: var(--line); background: var(--surface); color: var(--text); }
+:root .panel .actions .danger:hover { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+.target-hint-line { margin: 7px 0 0; color: var(--muted); font-size: 10px; text-align: center; }
+.pull-warning { margin: 12px 0 0; color: var(--muted); font-size: 10px; text-align: right; }
+
+.advanced { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+.advanced summary { cursor: pointer; color: var(--muted); font-size: 11px; }
+.advanced .provider-field { margin-top: 14px; }
+.chk-option { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.chk-option input { accent-color: var(--accent); }
+.advanced-hint { color: var(--muted); font-size: 10px; line-height: 1.6; }
+.history-link { color: var(--accent); font-size: 11px; }
+
+.connect-panel { padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(135deg, var(--surface-soft), var(--surface)); }
+.connect-copy { display: flex; gap: 10px; align-items: flex-start; }
+.cloud-symbol { display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 32px; border: 1px solid var(--line); border-radius: 9px; color: var(--accent); background: var(--surface); }
+.cloud-symbol svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.connect-panel h2 { margin: 0; color: var(--text); font-size: 13px; font-weight: 600; line-height: 1.6; }
+.connect-panel p { margin: 4px 0 0; color: var(--muted); font-size: 10px; line-height: 1.7; }
+.connect-btn { display: flex; justify-content: space-between; align-items: center; width: 100%; margin-top: 18px; padding: 11px 13px; border: 0; border-radius: 8px; background: var(--text); color: var(--bg); font-size: 12px; font-weight: 600; }
+.provider-caption { text-align: center; color: var(--muted); font-size: 9px; margin-top: 10px; }
+.connect-btn span { font-size: 18px; }
+.connect-btn:hover { filter: brightness(1.08); }
+.connect-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+:root[data-skin="neon"] .connect-btn { background: var(--accent); color: #05070a; }
+:root[data-skin="neon"] .panel .count-chip,
+:root[data-skin="neon"] .panel .actions button,
+:root[data-skin="neon"] .connect-btn { border-radius: 3px; }
+:root[data-skin="brutal"] .panel .count-chip,
+:root[data-skin="brutal"] .panel .actions button,
+:root[data-skin="brutal"] .connect-btn { border: 2px solid var(--line); border-radius: 3px; }
+
+:root .panel .status { box-shadow: none; }
+
+:root .panel .hero-settings {
+  width: 36px;
+  height: 36px;
+  flex-basis: 36px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  transition: background 180ms ease, color 180ms ease, border-color 180ms ease;
+}
+
+:root .panel .hero-settings:is(:hover, :focus-visible) {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--line);
+}
+
+:root .panel .hero-settings:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+:root .panel .hero-settings:active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root .panel .hero-settings,
+  :root .panel .hero-settings .settings-icon {
+    transition: none;
+    transform: none;
+  }
+}

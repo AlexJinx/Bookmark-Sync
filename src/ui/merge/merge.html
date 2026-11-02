@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>解决书签冲突</title>
+  <link rel="stylesheet" href="./merge.css" />
+</head>
+<body>
+  <main>
+    <header><div><h1>解决书签冲突</h1><p id="destination">正在读取数据…</p></div><button id="reload">重新读取两侧数据</button></header>
+    <p class="notice">左侧本地，右侧云端。勾选要保留的书签，两侧都勾选则都保留；下方实时预览结果。相同内容自动保留，文件夹项的选择作用于整个文件夹。若要删除某项，请明确选择“两边都不保留”。</p>
+    <section id="demoPanel" hidden>
+      <h2>模拟体验 · 不会修改真实数据</h2>
+      <p>测试场景：同一条书签被两边改名，两边各新增一条书签。选择一个标题并保留两条新增书签，最终得到 3 条书签。</p>
+      <button id="demoExample">使用示例选择</button>
+      <button id="demoChange">模拟云端再次更新</button>
+      <button id="demoLocalChange" hidden>模拟本地再次更新</button>
+      <button id="demoReset">重置模拟数据</button>
+    </section>
+    <section class="merge-editor"><h2>书签对照 <span id="progress"></span></h2><div class="column-headings"><strong>本地版本<small>当前浏览器中的书签</small></strong><strong>云端版本<small>仓库中保存的书签</small></strong></div><div id="conflicts"></div></section>
+    <details><summary>查看原始快照（只读）</summary><div class="sources">
+<section><h2>本地版本</h2><textarea id="local" readonly aria-label="本地书签 JSON" spellcheck="false"></textarea></section>
+      <section><h2>云端版本</h2><textarea id="remote" readonly aria-label="云端书签 JSON" spellcheck="false"></textarea></section>
+    </div></details>
+    <section class="result"><h2>合并预览 <span id="resultCount"></span></h2><div id="resultTree"></div><details><summary>查看生成的 JSON（只读）</summary><textarea id="result" aria-label="合并结果 JSON" readonly spellcheck="false"></textarea></details></section>
+    <section id="demoApplied" class="result" hidden>
+      <h2>应用后的模拟本地 <span id="demoAppliedCount"></span></h2>
+      <p class="demo-applied-note">仅更新本页测试数据，模拟云端保持不变，真实书签和云端均未修改。</p>
+      <div id="demoAppliedTree"></div>
+    </section>
+    <footer>
+      <p id="submitNote">仅提交当前平台，<strong>不会修改本地书签</strong>。提交前自动备份两侧数据。成功后如需同步本地，请在弹窗拉取并确认覆盖。</p>
+      <label><input id="confirm" type="checkbox" /><span id="confirmLabel">我已检查合并结果，确认用它更新此平台的云端快照</span></label>
+      <div class="buttons"><button id="download" disabled>下载合并草稿</button><button id="validate" disabled>校验结果</button><button id="submit" disabled>提交合并结果</button></div>
+      <p id="status" role="status" aria-live="polite"></p>
+    </footer>
+  </main>
+  <script type="module" src="./merge.js"></script>
+</body>
+</html>

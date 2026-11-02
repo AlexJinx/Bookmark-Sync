@@ -1047,38 +1047,58 @@ h4 {
 
 .platform-tabs {
   display: inline-flex;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface-soft);
+  justify-self: start;
+  gap: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .platform-tab {
-  padding: 7px 18px;
+  padding: 10px 2px;
   border: 0;
-  border-radius: 999px;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   background: transparent;
   color: var(--muted);
   font-size: 11.5px;
   font-weight: 620;
   cursor: pointer;
-  transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease;
+  transition: color 150ms ease, border-color 150ms ease;
 }
 
 .platform-tab:hover {
-  color: #4b5165;
+  color: var(--text);
 }
 
 .platform-tab.active {
-  background: var(--surface);
+  background: transparent;
+  border-bottom-color: var(--accent);
   color: var(--accent);
-  box-shadow: 0 1px 4px rgba(31, 35, 74, 0.12);
+  box-shadow: none;
 }
 
 .platform-tab:focus-visible {
   outline: 3px solid #b3abff;
   outline-offset: 2px;
+}
+
+.timeline-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.timeline-pagination button:disabled {
+  opacity: .4;
+  cursor: not-allowed;
 }
 
 .page-tabs {
@@ -1836,6 +1856,37 @@ footer {
   font-size: 10px;
 }
 
+/* Settings actions stay in the document flow, not over the page. */
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0 32px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-actions .dirty-hint {
+  flex: 1 1 180px;
+}
+
+.appearance-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.theme-toggle .mode-sun,
+.theme-toggle.is-dark .mode-moon {
+  display: none;
+}
+
+.theme-toggle.is-dark .mode-sun {
+  display: block;
+}
+
 /* ---------- 保存栏 ---------- */
 .savebar {
   position: fixed;
@@ -1875,7 +1926,7 @@ footer {
   align-items: flex-start;
   gap: 8px;
   width: min(420px, calc(100vw - 32px));
-  padding: 11px 13px;
+  padding: 11px 36px;
   border: 1px solid #dedfee;
   border-radius: 11px;
   background: var(--surface);
@@ -1898,6 +1949,9 @@ footer {
 }
 
 .status-close {
+  position: absolute;
+  right: 12px;
+  top: 11px;
   flex: 0 0 auto;
   min-width: 18px;
   min-height: 18px;
@@ -1914,6 +1968,8 @@ footer {
 }
 
 #statusText {
+  flex: 1;
+  text-align: center;
   min-width: 0;
   overflow-wrap: anywhere;
 }

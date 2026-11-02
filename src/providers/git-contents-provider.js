@@ -29,6 +29,29 @@ export class GitContentsProvider extends BaseProvider {
     };
   }
 
+  async listCommits({ limit = 20, page = 1 } = {}) {
+    const size = Math.min(100, Math.max(1, Math.floor(Number(limit)) || 20));
+    const params = new URLSearchParams({ sha: this.config.branch, path: this.config.path,
+      per_page: String(size), page: String(Math.max(1, Math.floor(Number(page)) || 1)) });
+    const response = await this.request(`${this.repoUrl}/commits?${params}`, { headers: this.headers });
+    if (!response.ok) throw new Error(await parseError(response, this.id));
+    const commits = await response.json();
+    if (!Array.isArray(commits)) throw new Error("提交历史返回格式异常");
+    return commits;
+  }
+
+  async getCommit(sha) {
+    if (!/^[a-f0-9]{7,64}$/i.test(sha || "")) throw new Error("提交版本号无效");
+    const response = await this.request(`${this.repoUrl}/commits/${encodeURIComponent(sha)}`, { headers: this.headers });
+    if (!response.ok) throw new Error(await parseError(response, this.id));
+    return response.json();
+  }
+
+  async getFileAtCommit(sha, path = this.config.path) {
+    const client = new this.constructor({ ...this.config, branch: sha, path });
+    return client.getRemoteFile();
+  }
+
   async testConnection() {
     const response = await this.request(this.repoUrl, { headers: this.headers });
     if (!response.ok) {

@@ -117,18 +117,13 @@ input {
 }
 
 .settings-icon {
-  width: 15px;
-  height: 15px;
+  width: 18px;
+  height: 18px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.6;
   stroke-linecap: round;
   stroke-linejoin: round;
-  transition: transform 380ms cubic-bezier(0.2, 1, 0.3, 1);
-}
-
-.setting-btn.icon-btn:hover .settings-icon {
-  transform: rotate(180deg);
 }
 
 /* ---------- 最近同步 ---------- */
@@ -539,4 +534,142 @@ input {
 
 :root[data-theme="dark"] .status[data-type="success"] {
   background: rgba(50, 189, 152, 0.12);
+}
+
+/* ---------- 界面皮肤 ---------- */
+:root[data-skin="aurora"] {
+  color-scheme: dark;
+  --bg: #070a14;
+  --surface: rgba(255, 255, 255, 0.045);
+  --surface-soft: rgba(255, 255, 255, 0.03);
+  --text: #e8ecff;
+  --muted: #8b93b5;
+  --line: rgba(255, 255, 255, 0.1);
+  --accent: #8b7bff;
+  --accent-deep: #5f4bff;
+  --accent-soft: rgba(139, 123, 255, 0.16);
+  --mint: #4fe3c1;
+  --mint-soft: rgba(79, 227, 193, 0.14);
+  --peach: #ffb27a;
+  --peach-soft: rgba(255, 178, 122, 0.14);
+  --danger: #ff7a8a;
+  --danger-soft: rgba(255, 122, 138, 0.14);
+  --shadow: 0 14px 32px rgba(0, 0, 0, 0.38);
+}
+
+:root[data-skin="aurora"] body {
+  background:
+    radial-gradient(70% 52% at 2% 0%, rgba(124, 92, 255, 0.3), transparent 66%),
+    radial-gradient(58% 44% at 100% 22%, rgba(45, 226, 230, 0.16), transparent 70%),
+    #070a14;
+}
+
+:root[data-skin="aurora"] .hero,
+:root[data-skin="aurora"] .section,
+:root[data-skin="aurora"] .count-chip,
+:root[data-skin="aurora"] .status-strip {
+  backdrop-filter: blur(16px);
+}
+
+:root[data-skin="neon"] {
+  color-scheme: dark;
+  --bg: #05070a;
+  --surface: #090d10;
+  --surface-soft: #0c1216;
+  --text: #d7f7e6;
+  --muted: #7d9a90;
+  --line: #16241f;
+  --accent: #b6ff3c;
+  --accent-deep: #93e600;
+  --accent-soft: rgba(182, 255, 60, 0.12);
+  --mint: #00ffd0;
+  --mint-soft: rgba(0, 255, 208, 0.1);
+  --peach: #ff4fa3;
+  --peach-soft: rgba(255, 79, 163, 0.12);
+  --danger: #ff5b6e;
+  --danger-soft: rgba(255, 91, 110, 0.12);
+  --shadow: 0 0 0 1px rgba(182, 255, 60, 0.06), 0 14px 32px rgba(0, 0, 0, 0.6);
+}
+
+:root[data-skin="neon"] body {
+  background-color: #05070a;
+  background-image:
+    linear-gradient(rgba(182, 255, 60, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(182, 255, 60, 0.045) 1px, transparent 1px),
+    radial-gradient(72% 48% at 0% 0%, rgba(0, 255, 208, 0.12), transparent 72%);
+  background-size: 32px 32px, 32px 32px, 100% 100%;
+}
+
+:root[data-skin="neon"] .hero,
+:root[data-skin="neon"] .section,
+:root[data-skin="neon"] .count-chip,
+:root[data-skin="neon"] .status-strip {
+  border-radius: 3px;
+}
+
+:root[data-skin="neon"] .mark,
+:root[data-skin="neon"] .actions .main {
+  color: #071008;
+  background: var(--accent);
+  box-shadow: 0 0 18px rgba(182, 255, 60, 0.26);
+}
+
+:root[data-skin="neon"] .actions .danger {
+  border-color: rgba(255, 91, 110, 0.38);
+  color: #ff9aa8;
+}
+
+:root[data-skin="neon"] .setting-btn.icon-btn,
+:root[data-skin="neon"] .provider-field select {
+  border-color: var(--line);
+  background-color: var(--surface-soft);
+}
+
+:root[data-skin="brutal"] {
+  color-scheme: light;
+  --bg: #efe9dd;
+  --surface: #fffdf6;
+  --surface-soft: #f7f2e6;
+  --text: #15130f;
+  --muted: #6b6558;
+  --line: #15130f;
+  --accent: #2b57ff;
+  --accent-deep: #1236c9;
+  --accent-soft: #dfe5ff;
+  --mint: #00a37a;
+  --mint-soft: #d7f4ea;
+  --peach: #ff6a3d;
+  --peach-soft: #ffe3d8;
+  --danger: #d0263c;
+  --danger-soft: #ffdfe3;
+  --shadow: 3px 3px 0 #15130f;
+}
+
+:root[data-skin="brutal"] body {
+  background-color: #efe9dd;
+  background-image: radial-gradient(rgba(21, 19, 15, 0.12) 0.7px, transparent 0.7px);
+  background-size: 7px 7px;
+}
+
+:root[data-skin="brutal"] .hero,
+:root[data-skin="brutal"] .section,
+:root[data-skin="brutal"] .count-chip,
+:root[data-skin="brutal"] .status-strip {
+  border: 2px solid #15130f;
+  border-radius: 3px;
+}
+
+:root[data-skin="brutal"] .mark,
+:root[data-skin="brutal"] .actions .main {
+  border: 2px solid #15130f;
+  border-radius: 3px;
+  background: var(--accent);
+  box-shadow: 3px 3px 0 #15130f;
+}
+
+:root[data-skin="brutal"] .actions .danger,
+:root[data-skin="brutal"] .setting-btn.icon-btn,
+:root[data-skin="brutal"] .provider-field select {
+  border: 2px solid #15130f;
+  border-radius: 3px;
 }

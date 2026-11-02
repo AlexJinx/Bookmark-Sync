@@ -11,10 +11,9 @@
     <aside class="sidebar">
       <div class="brand">
         <span class="brand-icon" aria-hidden="true">↗</span>
-        <span>Bookmark<span class="brand-sub">SYNC WORKSPACE</span></span>
+        <span>书签同步</span>
       </div>
 
-      <div class="nav-label">工作空间</div>
       <nav aria-label="设置导航">
         <button type="button" class="nav-item active" data-page="dashboard">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -39,6 +38,13 @@
           </svg>
           基本设置
         </button>
+        <button type="button" class="nav-item hidden" data-page="appearance">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="8" />
+            <path d="M12 4v16M12 4a8 8 0 0 1 0 16" />
+          </svg>
+          外观设置
+        </button>
       </nav>
 
       <div class="sidebar-bottom">
@@ -46,66 +52,18 @@
           <span class="status-dot"></span>由你掌控的数据
           <small>Token 仅保存在浏览器本地存储中。</small>
         </div>
-        <div class="sidebar-meta">本地 UI · <span id="extVersion">v0.1.7</span></div>
+        <div class="sidebar-meta">本地界面 · <span id="extVersion">v0.1.7</span></div>
       </div>
     </aside>
 
     <main>
-      <header>
-        <div class="breadcrumb">设置 <span>/</span> <strong id="crumb">仪表盘</strong></div>
-        <div class="header-actions">
-          <button
-            type="button"
-            id="themeAutoBtn"
-            class="header-icon-btn"
-            aria-pressed="false"
-            aria-label="跟随系统外观"
-            title="跟随系统外观"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="3" y="4.5" width="18" height="12" rx="2" />
-              <path d="M9 20h6M12 16.5V20" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            id="themeSwitch"
-            class="theme-switch"
-            role="switch"
-            aria-checked="false"
-            aria-label="深色模式"
-          >
-            <svg class="track-icon sun" viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="12" cy="12" r="4.2" />
-              <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17 5.6 18.4" />
-            </svg>
-            <svg class="track-icon moon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M20 13.5A8.5 8.5 0 1 1 10.5 4a6.6 6.6 0 0 0 9.5 9.5Z" />
-            </svg>
-            <span class="theme-knob" aria-hidden="true">
-              <svg class="knob-icon knob-sun" viewBox="0 0 24 24">
-                <circle cx="12" cy="12" r="4.2" />
-                <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17 5.6 18.4" />
-              </svg>
-              <svg class="knob-icon knob-moon" viewBox="0 0 24 24">
-                <path d="M20 13.5A8.5 8.5 0 1 1 10.5 4a6.6 6.6 0 0 0 9.5 9.5Z" />
-              </svg>
-            </span>
-          </button>
-          <span id="themeHint" class="visually-hidden" aria-live="polite">当前跟随系统：浅色</span>
-          <span id="connectionBadge" class="badge">检测中…</span>
-        </div>
-      </header>
 
       <div class="content">
         <section id="page-dashboard" class="page active">
           <div class="page-heading">
             <div>
-              <div class="eyebrow">YOUR BOOKMARKS, YOUR REPO</div>
-              <h1>仪表盘<span class="heading-dot">.</span></h1>
-              <p>书签总量、存储方式与同步状态，一屏看完。</p>
+              <h1>仪表盘</h1>
             </div>
-            <button type="button" class="button primary" data-goto="settings">配置仓库 <span>→</span></button>
           </div>
 
           <section class="sync-hero">
@@ -113,13 +71,10 @@
               <span id="heroPill" class="pill green"><i class="status-dot"></i>等待检测</span>
               <h2>你的书签，<br />存在你自己的云端。</h2>
               <p id="heroNote">先在基本设置里填写仓库信息，之后在弹窗中执行推送与拉取。</p>
-              <div class="hero-actions">
-                <button type="button" class="button" data-goto="timeline">查看时光胶囊 <span>→</span></button>
-                <button type="button" class="button" data-goto="settings">基本设置</button>
-              </div>
+
             </div>
             <div class="hero-visual" aria-hidden="true">
-              <span class="topo-tag">SYNC MAP <b>LIVE</b></span>
+              <span class="topo-tag">同步示意</span>
               <span class="orbit orbit-a"></span>
               <span class="orbit orbit-b"></span>
               <span class="orbit orbit-c"></span>
@@ -128,18 +83,18 @@
               <span class="core-ping core-ping-b"></span>
               <span class="topo-core">
                 <span class="core-check">✓</span>
-                <strong>LOCAL</strong>
-                <small>bookmarks</small>
+                <strong>本地</strong>
+                <small>书签</small>
               </span>
               <span class="map-line line-github"><i></i><i></i><i></i></span>
               <span class="map-line line-gitee"><i></i><i></i><i></i></span>
               <span class="map-node map-github">
                 <span class="node-icon">GH</span>
-                <span><span class="node-label">REMOTE</span><strong>GitHub</strong></span>
+                <span><span class="node-label">云端</span><strong>GitHub</strong></span>
               </span>
               <span class="map-node map-gitee">
                 <span class="node-icon">GE</span>
-                <span><span class="node-label">REMOTE</span><strong>Gitee</strong></span>
+                <span><span class="node-label">云端</span><strong>Gitee</strong></span>
               </span>
             </div>
           </section>
@@ -174,7 +129,6 @@
                   <h3>存储方式 <span class="subtle">02</span></h3>
                   <p>书签以 JSON 快照写入你指定的仓库文件。</p>
                 </div>
-                <button type="button" class="text-button" data-goto="settings">管理配置 →</button>
               </div>
               <article class="row">
                 <span class="row-icon purple">GH</span>
@@ -203,9 +157,7 @@
               <div class="section-heading">
                 <div>
                   <h3>同步状态</h3>
-                  <p>上一次推送或拉取的结果。</p>
                 </div>
-                <button type="button" class="text-button" data-goto="timeline">历史记录 →</button>
               </div>
               <article class="timeline-item">
                 <i class="event-icon peach">↻</i>
@@ -223,9 +175,7 @@
         <section id="page-timeline" class="page">
           <div class="page-heading">
             <div>
-              <div class="eyebrow">SYNC HISTORY</div>
-              <h1>时光胶囊<span class="heading-dot">.</span></h1>
-              <p>每一次推送都会在仓库留下一条提交，可以回看每次快照的变化。</p>
+              <h1>时光胶囊</h1>
             </div>
             <button id="timelineRefreshBtn" class="button" type="button">刷新记录</button>
           </div>
@@ -235,7 +185,6 @@
               <button type="button" class="platform-tab" data-provider="github" aria-pressed="true">GitHub</button>
               <button type="button" class="platform-tab" data-provider="gitee" aria-pressed="false">Gitee</button>
             </div>
-            <p id="timelineProviderNote" class="page-tabs-note">正在读取当前平台的提交历史。</p>
           </div>
 
           <div class="timeline-layout">
@@ -243,15 +192,18 @@
               <div class="section-heading">
                 <div>
                   <h3>提交记录</h3>
-                  <p>按时间倒序排列，点击任意一条查看详情。</p>
                 </div>
               </div>
               <div id="timelineState" class="empty-state">
                 <span class="empty-icon">◷</span>
                 <h4>正在读取提交历史…</h4>
-                <p>提交列表来自你配置的仓库，按时间倒序排列。</p>
               </div>
               <ol id="timelineList" class="timeline-list"></ol>
+              <nav class="timeline-pagination" aria-label="提交历史分页">
+                <button id="timelinePrev" class="button" type="button" disabled>上一页</button>
+                <span id="timelinePage" aria-live="polite">第 1 页 · 每页 10 条</span>
+                <button id="timelineNext" class="button" type="button" disabled>下一页</button>
+              </nav>
             </section>
 
             <aside id="commitDetail" class="card commit-detail">
@@ -264,11 +216,8 @@
         <section id="page-settings" class="page">
           <div class="page-heading">
             <div>
-              <div class="eyebrow">WORKSPACE SETTINGS</div>
-              <h1>基本设置<span class="heading-dot">.</span></h1>
-              <p>仓库连接、自动推送与备份迁移都集中在这里。</p>
+              <h1>基本设置</h1>
             </div>
-            <button type="button" class="button primary" data-goto="dashboard">回到仪表盘 <span>→</span></button>
           </div>
 
           <div class="split">
@@ -280,7 +229,6 @@
                   <button type="button" class="platform-tab" data-provider="github" aria-pressed="true">GitHub</button>
                   <button type="button" class="platform-tab" data-provider="gitee" aria-pressed="false">Gitee</button>
                 </div>
-                <span class="field-note">切换标签即可分别编辑两个平台的仓库配置，切换会自动保存。</span>
               </div>
 
               <label class="token-field">
@@ -338,7 +286,6 @@
               <p class="side-note"><b>Gitee</b> 令牌需要仓库读写权限，私有仓库同样可用。</p>
               <p class="side-note"><b>路径</b> 首次推送会自动创建快照文件，无需手动预建。</p>
               <p class="side-note"><b>分支</b> 必须是已存在的分支，默认 main 或 master。</p>
-              <p class="side-note"><b>历史</b> 时光胶囊读取该文件的提交记录，路径改动后历史会随之变化。</p>
             </aside>
           </div>
 
@@ -366,11 +313,69 @@
             </label>
           </section>
 
+
+
+          <div class="settings-actions" role="group" aria-label="基本设置操作">
+            <p id="dirtyHint" class="dirty-hint" aria-live="polite">所有更改已保存</p>
+            <button id="saveBtn" class="button primary" type="button">保存设置</button>
+            <button id="testBtn" class="button" type="button">测试连接</button>
+          </div>
+
+          <div class="section-heading standalone">
+            <div>
+              <h3>备份与迁移</h3>
+            </div>
+          </div>
+          <section class="card">
+            <div class="section-heading">
+              <div><h3>冲突合并体验</h3><p>使用模拟书签体验合并，不读取或修改真实书签及云端数据。</p></div>
+              <a class="button" href="../merge/merge.html?mode=demo" target="_blank" rel="noopener">模拟推送冲突</a>
+              <a class="button" href="../merge/merge.html?mode=demo&amp;direction=pull" target="_blank" rel="noopener">模拟拉取冲突</a>
+            </div>
+          </section>
+
+          <div class="backup-grid">
+            <article class="backup-card">
+              <p class="backup-badge">书签数据</p>
+              <h3>导出 / 导入书签快照</h3>
+              <p class="backup-desc">用于离线备份和恢复，不包含平台令牌。</p>
+              <div class="backup-actions">
+                <button id="exportBookmarksBtn" class="button" type="button">导出书签 JSON</button>
+                <button id="importBookmarksBtn" class="button" type="button">导入书签 JSON</button>
+              </div>
+            </article>
+
+            <article class="backup-card secure">
+              <p class="backup-badge">配置参数</p>
+              <h3>导出 / 导入平台配置</h3>
+              <div class="backup-actions">
+                <button id="exportConfigBtn" class="button primary" type="button">导出配置 JSON</button>
+                <button id="importConfigBtn" class="button" type="button">导入配置 JSON</button>
+              </div>
+            </article>
+          </div>
+
+          <p class="backup-note">
+            配置文件包含 Token，请勿公开或分享给他人。
+          </p>
+
+          <input id="importBookmarksInput" type="file" accept="application/json" hidden />
+          <input id="importConfigInput" type="file" accept="application/json" hidden />
+
+
+        </section>
+
+        <section id="page-appearance" class="page hidden">
+          <div class="page-heading">
+            <div>
+              <h1>外观设置</h1>
+            </div>
+          </div>
           <section class="card skin-card">
             <div class="section-heading">
               <div>
                 <h3>界面风格</h3>
-                <p>四套配色方案。极光玻璃、霓虹终端为深色基底，纸感硬边为浅色基底，选定后明暗开关由风格接管。</p>
+                <p>切换后自动保存。</p>
               </div>
             </div>
             <div class="skin-picker" role="radiogroup" aria-label="界面风格">
@@ -395,64 +400,54 @@
                 <span class="skin-desc">纸感 · 硬投影</span>
               </button>
             </div>
-            <span id="skinNote" class="field-note">当前为默认风格，可使用右上角的明暗开关。</span>
             <input id="skin" type="hidden" value="default" />
           </section>
 
           <input id="theme" type="hidden" value="auto" />
-
-          <div class="section-heading standalone">
-            <div>
-              <h3>备份与迁移</h3>
-              <p>书签快照用于离线恢复，配置参数用于换设备时一次性搬走。</p>
+          <section class="card">
+            <div class="section-heading">
+              <div><h3>明暗模式</h3><p>默认风格支持切换明暗或跟随系统，其他风格使用固定明暗。</p></div>
+              <div class="appearance-controls">
+          <button
+            type="button"
+            id="themeAutoBtn"
+            class="header-icon-btn"
+            aria-pressed="false"
+            aria-label="跟随系统外观"
+            title="跟随系统外观"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="4.5" width="18" height="12" rx="2" />
+              <path d="M9 20h6M12 16.5V20" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            id="themeSwitch"
+            class="header-icon-btn theme-toggle"
+            aria-label="切换到深色模式"
+            title="切换到深色模式"
+          >
+            <svg class="mode-sun" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="4.2" />
+              <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17 5.6 18.4" />
+            </svg>
+            <svg class="mode-moon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M20 13.5A8.5 8.5 0 1 1 10.5 4a6.6 6.6 0 0 0 9.5 9.5Z" />
+            </svg>
+          </button>
+          <span id="themeHint" class="visually-hidden" aria-live="polite">当前跟随系统：浅色</span>
+              </div>
             </div>
-          </div>
-
-          <div class="backup-grid">
-            <article class="backup-card">
-              <p class="backup-badge">书签数据</p>
-              <h3>导出 / 导入书签快照</h3>
-              <p class="backup-desc">用于离线备份和恢复，不包含平台令牌。</p>
-              <div class="backup-actions">
-                <button id="exportBookmarksBtn" class="button" type="button">导出书签 JSON</button>
-                <button id="importBookmarksBtn" class="button" type="button">导入书签 JSON</button>
-              </div>
-            </article>
-
-            <article class="backup-card secure">
-              <p class="backup-badge">配置参数</p>
-              <h3>导出 / 导入平台配置</h3>
-              <p class="backup-desc">默认不含 Token，可安全迁移仓库定位与自动同步参数。</p>
-              <label class="config-token-export">
-                <input id="includeTokensInConfigExport" type="checkbox" />
-                导出时包含 Token
-              </label>
-              <div class="backup-actions">
-                <button id="exportConfigBtn" class="button primary" type="button">导出配置 JSON</button>
-                <button id="importConfigBtn" class="button" type="button">导入配置 JSON</button>
-              </div>
-            </article>
-          </div>
-
-          <p class="backup-note">
-            安全提示：默认导出不包含访问令牌；勾选「导出时包含 Token」后，请仅在可信设备与私有通道中保存和传输。
-          </p>
-
-          <input id="importBookmarksInput" type="file" accept="application/json" hidden />
-          <input id="importConfigInput" type="file" accept="application/json" hidden />
+          </section>
         </section>
 
         <footer>
           <span><span class="status-dot"></span>本地设置页 · 数据写入你自己的仓库</span>
-          <span>Bookmark Sync <span id="extVersionFooter">v0.1.7</span></span>
+          <span>书签同步 <span id="extVersionFooter">v0.1.7</span></span>
         </footer>
       </div>
 
-      <div class="savebar">
-        <p id="dirtyHint" class="dirty-hint">所有更改已保存</p>
-        <button id="saveBtn" class="button primary" type="button">保存设置</button>
-        <button id="testBtn" class="button" type="button">测试连接</button>
-      </div>
     </main>
 
     <div id="status" class="status hidden" role="status" aria-live="polite">

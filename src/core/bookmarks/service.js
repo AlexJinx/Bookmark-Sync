@@ -31,7 +31,7 @@ async function withSelfMutation(fn) {
 
 // ---- 快照结构校验 ----
 
-function validateSnapshot(snapshot) {
+export function validateSnapshot(snapshot) {
   if (!snapshot || typeof snapshot !== "object") {
     throw new Error("快照为空或格式非法");
   }
@@ -238,7 +238,7 @@ export async function exportSnapshot() {
   };
 }
 
-async function performImportSnapshot(snapshot, { allowExactDuplicates = false } = {}) {
+async function performImportSnapshot(snapshot, { allowExactDuplicates = false, expectedLocalHash } = {}) {
   validateSnapshot(snapshot);
   const duplicateSummary = summarizeExactDuplicateFolders(snapshot);
   if (duplicateSummary.extraFolders > 0 && !allowExactDuplicates) {
@@ -249,6 +249,11 @@ async function performImportSnapshot(snapshot, { allowExactDuplicates = false } 
   }
 
   const backupSnapshot = await exportSnapshot();
+  if (expectedLocalHash !== undefined && await hashSnapshot(backupSnapshot) !== expectedLocalHash) {
+    const error = new Error("本地书签已变化，请重新读取两侧数据后再次合并。");
+    error.code = "SYNC_CONFLICT";
+    throw error;
+  }
   // 抑制范围覆盖导入与回滚全程（回滚同样是自变更，漏掉会触发回音推送）。
   return withSelfMutation(async () => {
     try {

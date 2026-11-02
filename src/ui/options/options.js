@@ -14,7 +14,24 @@ const fields = {
 
 import { CONFIG_EXPORT_TYPE, createConfigExportPayload } from "../../config-export.js";
 import { applyProviderDrafts } from "../../config-drafts.js";
-import { PROVIDERS } from "../../providers/registry.js";
+import { createAppearanceSaver } from "../shared/appearance-save.js";
+import { APPEARANCE_SETTINGS_ENABLED, effectiveAppearance } from "../shared/appearance-policy.js";
+
+const appearanceSaver = createAppearanceSaver(sendMessage);
+let appearanceSaveRevision = 0;
+
+async function autoSaveAppearance() {
+  if (!APPEARANCE_SETTINGS_ENABLED) return;
+  const revision = ++appearanceSaveRevision;
+  try {
+    await appearanceSaver.save({ theme: fields.theme.value || "auto", skin: currentSkin() });
+  } catch (error) {
+    if (revision === appearanceSaveRevision) {
+      markDirty();
+      setStatus(`界面风格自动保存失败：${error.message}，请点击保存设置重试。`, true);
+    }
+  }
+}
 
 const providerUi = {
   tabs: Array.from(document.querySelectorAll(".platform-tab"))
@@ -42,7 +59,7 @@ function resolveTheme(choice) {
 }
 
 function applyTheme(choice) {
-  document.documentElement.dataset.theme = resolveTheme(choice);
+  document.documentElement.dataset.theme = resolveTheme(effectiveAppearance({ theme: choice }).theme);
 }
 
 function syncThemeUi(choice) {
@@ -50,8 +67,8 @@ function syncThemeUi(choice) {
   if (themeUi.switchBtn) {
     themeUi.switchBtn.classList.toggle("is-dark", isDark);
     themeUi.switchBtn.classList.toggle("is-auto", choice === "auto");
-    themeUi.switchBtn.setAttribute("aria-checked", String(isDark));
     themeUi.switchBtn.setAttribute("aria-label", isDark ? "切换到浅色模式" : "切换到深色模式");
+    themeUi.switchBtn.title = isDark ? "切换到浅色模式" : "切换到深色模式";
   }
   if (themeUi.autoBtn) {
     themeUi.autoBtn.setAttribute("aria-pressed", String(choice === "auto"));
@@ -141,7 +158,7 @@ function syncThemeAvailability(skin) {
     if (locked) {
       element.title = tip;
     } else {
-      element.removeAttribute("title");
+      element.title = element.getAttribute("aria-label") || "";
     }
   }
 
@@ -165,9 +182,10 @@ function syncSkinUi(skin) {
 }
 
 function applySkinChoice(skin) {
-  const next = SKIN_CHOICES.includes(skin) ? skin : "default";
+  const saved = SKIN_CHOICES.includes(skin) ? skin : "default";
+  const next = effectiveAppearance({ skin: saved }).skin;
   const locked = SKIN_BASE_THEME[next];
-  fields.skin.value = next;
+  fields.skin.value = saved;
   document.documentElement.dataset.skin = next;
 
   if (locked) {
@@ -201,7 +219,7 @@ function bindSkinOptions() {
   }
 }
 
-document.documentElement.dataset.theme = themeUi.media.matches ? "dark" : "light";
+applyTheme("auto");
 
 const scopedDrafts = {
   github: null,
@@ -465,7 +483,7 @@ function downloadJsonFile(fileName, payload) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function downloadConfig(config, { includeTokens = false } = {}) {
+function downloadConfig(config, { includeTokens = true } = {}) {
   const manifestVersion = chrome.runtime.getManifest().version || "unknown";
   const payload = createConfigExportPayload(config, {
     includeTokens,
@@ -554,7 +572,8 @@ function render(config) {
 const PAGE_LABELS = {
   dashboard: "仪表盘",
   timeline: "时光胶囊",
-  settings: "基本设置"
+  settings: "基本设置",
+  appearance: "外观设置"
 };
 
 const overviewState = {
@@ -564,13 +583,18 @@ const overviewState = {
 };
 
 const timelineState = {
+  page: 1,
+  hasNext: false,
   commits: [],
   provider: "",
   selectedSha: "",
   loading: false
 };
+let timelineRequest = 0;
+let detailRequest = 0;
 
 function showPage(page) {
+  if (page === "appearance" && !APPEARANCE_SETTINGS_ENABLED) page = "settings";
   if (!PAGE_LABELS[page]) {
     return;
   }
@@ -582,11 +606,6 @@ function showPage(page) {
     section.classList.toggle("active", section.id === `page-${page}`);
   }
 
-  const crumb = document.getElementById("crumb");
-  if (crumb) {
-    crumb.textContent = PAGE_LABELS[page];
-  }
-
   if (page === "timeline" && timelineState.commits.length === 0 && !timelineState.loading) {
     void loadTimeline();
   }
@@ -595,12 +614,15 @@ function showPage(page) {
 }
 
 function bindNavigation() {
+  window.addEventListener("hashchange", () => {
+    showPage(location.hash.slice(1) || "dashboard");
+  });
   document.addEventListener("click", (event) => {
-    const element = event.target instanceof Element ? event.target.closest("[data-page], [data-goto]") : null;
+    const element = event.target instanceof Element ? event.target.closest(".nav-item[data-page]") : null;
     if (!element) {
       return;
     }
-    showPage(element.dataset.page || element.dataset.goto);
+    showPage(element.dataset.page);
   });
 }
 
@@ -779,6 +801,7 @@ async function load() {
 }
 
 async function save() {
+  await appearanceSaver.flush();
   const current = await sendMessage("getConfig");
   const nextConfig = buildNextConfig(current);
   await sendMessage("saveConfig", { config: nextConfig });
@@ -801,9 +824,8 @@ async function testConnection() {
 
 async function exportConfig() {
   const config = await sendMessage("getConfig");
-  const includeTokens = Boolean(document.getElementById("includeTokensInConfigExport")?.checked);
-  downloadConfig(config, { includeTokens });
-  setStatus(includeTokens ? "配置导出完成，文件包含 Token，请妥善保管。" : "配置导出完成，文件未包含 Token。");
+  downloadConfig(config);
+  setStatus("配置已导出，请妥善保管。");
 }
 
 async function exportBookmarks() {
@@ -924,8 +946,8 @@ function bindEvents() {
   fields.autoSyncEnabled.addEventListener("change", markDirty);
   fields.autoSyncIntervalMinutes.addEventListener("input", markDirty);
   fields.autoSyncIntervalMinutes.addEventListener("change", markDirty);
-  fields.theme.addEventListener("change", markDirty);
-  fields.skin.addEventListener("change", markDirty);
+  fields.theme.addEventListener("change", autoSaveAppearance);
+  fields.skin.addEventListener("change", autoSaveAppearance);
   document.getElementById("statusCloseBtn").addEventListener("click", hideStatus);
 }
 
@@ -1015,8 +1037,8 @@ function renderTimeline(result) {
   if (commits.length === 0) {
     setTimelineState(
       "empty",
-      "还没有提交记录",
-      "先在弹窗里执行一次推送，仓库里就会留下第一条快照提交。"
+      timelineState.page === 1 ? "还没有提交记录" : "本页没有提交记录",
+      timelineState.page === 1 ? "当前快照文件暂无提交历史。" : "云端历史可能已更新，请返回上一页或刷新记录。"
     );
     return;
   }
@@ -1145,11 +1167,11 @@ function buildDiffRow(entry, kind, marker) {
 
   const title = document.createElement("span");
   title.className = "diff-title";
-  title.textContent = entry.title || entry.url || "(未命名书签)";
+  title.textContent = `${entry.type === "folder" ? "[文件夹] " : ""}${entry.title || entry.url || "(未命名)"}`;
 
   const meta = document.createElement("span");
   meta.className = "diff-meta";
-  meta.textContent = `${entry.path || "根目录"} · ${entry.url}`;
+  meta.textContent = `${entry.path || "根目录"}${entry.url ? ` · ${entry.url}` : ""}`;
 
   copy.append(title, meta);
   row.append(badge, copy);
@@ -1177,7 +1199,7 @@ function renderCommitChanges(changes) {
   const head = document.createElement("div");
   head.className = "detail-changes-head";
   const heading = document.createElement("h4");
-  heading.textContent = "书签变更";
+  heading.textContent = "书签与文件夹变更";
   head.append(heading);
   section.append(head);
 
@@ -1242,7 +1264,7 @@ function renderCommitDetail(detail, state = "empty") {
   heading.textContent = "提交详情";
   box.append(heading);
 
-  if (!detail) {
+  if (!detail && state !== "loading") {
     const hint = document.createElement("p");
     hint.className = "commit-detail-hint";
     hint.textContent = "在左侧选择一条提交记录，这里会显示这次提交新增、删除和修改了哪些书签。";
@@ -1321,6 +1343,7 @@ async function selectCommit(sha) {
   }
 
   timelineState.selectedSha = sha;
+  const request = ++detailRequest;
   for (const button of document.querySelectorAll(".commit-button")) {
     button.setAttribute("aria-current", String(button.dataset.sha === sha));
   }
@@ -1328,10 +1351,11 @@ async function selectCommit(sha) {
   renderCommitDetail(null, "loading");
   try {
     const detail = await sendMessage("getCommitDetail", { provider: timelineState.provider, sha });
-    if (timelineState.selectedSha === sha) {
+    if (request === detailRequest && timelineState.selectedSha === sha) {
       renderCommitDetail(detail);
     }
   } catch (error) {
+    if (request !== detailRequest) return;
     renderCommitDetail(null);
     const box = document.getElementById("commitDetail");
     if (box) {
@@ -1344,60 +1368,72 @@ async function selectCommit(sha) {
 }
 
 function resetTimeline() {
+  timelineState.page = 1;
+  timelineState.hasNext = false;
+  timelineRequest += 1;
+  detailRequest += 1;
   timelineState.commits = [];
   timelineState.selectedSha = "";
   timelineState.loading = false;
   renderCommitDetail(null);
+  renderTimelinePagination();
+}
+
+function renderTimelinePagination() {
+  document.getElementById("timelinePrev").disabled = timelineState.loading || timelineState.page <= 1;
+  document.getElementById("timelineNext").disabled = timelineState.loading || !timelineState.hasNext;
+  document.getElementById("timelinePage").textContent = `第 ${timelineState.page} 页 · 每页 10 条`;
 }
 
 async function loadTimeline() {
-  if (timelineState.loading) {
-    return;
-  }
+  const request = ++timelineRequest;
+  detailRequest += 1;
+  timelineState.selectedSha = "";
+  renderCommitDetail(null);
 
   const provider = fields.provider.value || "github";
-  const scoped = (overviewState.config && overviewState.config[provider]) || {};
 
   timelineState.loading = true;
+  timelineState.hasNext = false;
+  renderTimelinePagination();
   timelineState.provider = provider;
   setTimelineState("empty", "正在读取提交历史…", "提交列表来自你配置的仓库，按时间倒序排列。");
 
-  const note = document.getElementById("timelineProviderNote");
-  if (note) {
-    const location = scoped.owner && scoped.repo ? `${scoped.owner}/${scoped.repo}` : "尚未配置仓库";
-    note.textContent = `${getProviderLabel(provider)} · ${location}`;
-  }
-
-  // 远程 v0.2 Provider 仅提供同步所需的内容读写契约，尚未公开提交详情查询。
-  // 保留本地界面的时光胶囊入口，并明确引导到平台的原生历史页，避免调用不存在的消息协议。
-  const historyUrl = PROVIDERS[provider]?.historyUrl?.(scoped) || "";
-  setTimelineState(
-    "empty",
-    "提交历史请在云端查看",
-    historyUrl ? `请打开 ${getProviderLabel(provider)} 的仓库历史页查看完整提交与文件差异。` : "请先完成平台配置后查看云端历史。"
-  );
-  timelineState.loading = false;
-  return;
-
   try {
-    const result = await sendMessage("getCommitHistory", { provider, limit: 20 });
+    const result = await sendMessage("getCommitHistory", { provider, limit: 10, page: timelineState.page });
+    if (request !== timelineRequest) return;
     timelineState.commits = result.commits || [];
+    timelineState.hasNext = Boolean(result.hasNext);
     if (result.configured === false) {
       setTimelineState("empty", "尚未配置仓库", "先在基本设置里填写该平台的仓库信息，再回来查看提交历史。");
       return;
     }
     renderTimeline(result);
   } catch (error) {
+    if (request !== timelineRequest) return;
     timelineState.commits = [];
     setTimelineState("error", "无法读取提交历史", error.message || String(error));
   } finally {
-    timelineState.loading = false;
+    if (request === timelineRequest) {
+      timelineState.loading = false;
+      renderTimelinePagination();
+    }
   }
 }
 
 function bindTimeline() {
+  document.getElementById("timelinePrev").addEventListener("click", () => {
+    if (timelineState.loading || timelineState.page <= 1) return;
+    timelineState.page -= 1;
+    void loadTimeline();
+  });
+  document.getElementById("timelineNext").addEventListener("click", () => {
+    if (timelineState.loading || !timelineState.hasNext) return;
+    timelineState.page += 1;
+    void loadTimeline();
+  });
   document.getElementById("timelineRefreshBtn")?.addEventListener("click", () => {
-    timelineState.commits = [];
+    resetTimeline();
     void loadTimeline();
   });
 
@@ -1431,11 +1467,14 @@ function renderVersion() {
 }
 
 async function init() {
+  document.querySelector('[data-page="appearance"]').classList.toggle("hidden", !APPEARANCE_SETTINGS_ENABLED);
+  document.getElementById("page-appearance").classList.toggle("hidden", !APPEARANCE_SETTINGS_ENABLED);
   bindEvents();
   bindNavigation();
   bindTimeline();
   renderVersion();
   await run(load);
+  showPage(location.hash.slice(1) || "dashboard");
   void loadCounts();
 }
 

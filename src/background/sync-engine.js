@@ -1,4 +1,4 @@
-import { exportSnapshot, importSnapshot } from "../core/bookmarks/service.js";
+import { exportSnapshot, importSnapshot, validateSnapshot } from "../core/bookmarks/service.js";
 import { createProviderClient, PROVIDER_IDS } from "../providers/registry.js";
 import { getConfig, saveConfig, saveLastSync, getSyncState, saveSyncState } from "../core/storage.js";
 import { isProviderConfigured, getConfiguredProviders } from "../core/config.js";
@@ -18,6 +18,7 @@ import {
   setScopedSyncState,
   makeSyncState
 } from "./sync-state.js";
+import { getSyncScope } from "./sync-state.js";
 import { isConflictError } from "./conflict.js";
 import { createSerialOperationQueue } from "../operation-queue.js";
 import { summarizeExactDuplicateFolders } from "../snapshot-inspector.js";
@@ -27,6 +28,64 @@ import { summarizeExactDuplicateFolders } from "../snapshot-inspector.js";
 // 护栏误置为"空闲"（布尔实现会让第三个同步趁隙挤进来）。
 let syncRunningDepth = 0;
 const syncOperations = createSerialOperationQueue();
+
+export async function getMergePreview(provider) {
+  return syncOperations.run("mergePreview", async () => {
+    const config = withProvider(await getConfig(), provider);
+    assertKnownConfiguredProvider(config, provider);
+    const local = await getLocalSnapshotAndHash();
+    const remote = await createProviderClient(config).getRemoteFile();
+    const remoteSnapshot = remote.exists ? parseSnapshotText(remote.contentText || "") : null;
+    return {
+      provider, scope: getSyncScope(config), local: local.snapshot, remote: remoteSnapshot,
+      localHash: local.localHash, remoteSha: remote.sha || null,
+      remoteHash: remoteSnapshot ? await hashSnapshot(remoteSnapshot) : null
+    };
+  });
+}
+
+export async function submitMerge({ provider, expected, snapshot, direction = "push" }) {
+  return syncOperations.run("submitMerge", () => withSyncRun(async () => {
+    if (!["push", "pull"].includes(direction)) throw new Error("未知合并方向");
+    const config = withProvider(await getConfig(), provider);
+    assertKnownConfiguredProvider(config, provider);
+    if (direction === "push" && provider === "gist") throw new Error("Gist 不支持原子版本校验，暂不支持合并提交。");
+    validateSnapshot(snapshot);
+    ensureNoExactDuplicateFolders({ snapshot, operation: direction, side: direction === "pull" ? "local" : "remote" });
+    const local = await getLocalSnapshotAndHash();
+    const client = createProviderClient(config);
+    const remote = await client.getRemoteFile();
+    const remoteSnapshot = remote.exists ? parseSnapshotText(remote.contentText || "") : null;
+    const remoteHash = remoteSnapshot ? await hashSnapshot(remoteSnapshot) : null;
+    if (!expected || getSyncScope(config) !== expected.scope || local.localHash !== expected.localHash ||
+        (remote.sha || null) !== expected.remoteSha || remoteHash !== expected.remoteHash) {
+      throw new Error("本地、云端或仓库配置已变化。你的草稿仍保留，请重新载入两侧数据后再次合并。");
+    }
+    await chrome.storage.local.set({ lastMergeBackup: {
+      at: new Date().toISOString(), provider, direction, scope: expected.scope,
+      local: local.snapshot, remote: remoteSnapshot
+    } });
+    if (direction === "pull") {
+      await importSnapshot(snapshot, { expectedLocalHash: expected.localHash });
+      // Only equal snapshots are a shared baseline. Other choices remain unsynced.
+      const mergedHash = await hashSnapshot(snapshot);
+      if (remote.exists && mergedHash === remoteHash) {
+        const state = normalizeSyncStateStore(await getSyncState());
+        await saveSyncState(setScopedSyncState(state, makeSyncState(config, remote.sha, mergedHash)));
+      }
+      const lastSync = { at: new Date().toISOString(), direction, provider, merged: true, fileSha: remote.sha };
+      await saveLastSync(lastSync);
+      return lastSync;
+    }
+    // Never retry with a newer SHA: that would overwrite changes not reviewed by the user.
+    const result = await client.updateRemoteFile(JSON.stringify(snapshot, null, 2), remote.sha);
+    const lastSync = { at: new Date().toISOString(), direction: "push", provider, merged: true,
+      fileSha: result.fileSha, commitSha: result.commitSha };
+    await saveLastSync(lastSync);
+    // Local bookmarks remain unchanged, so do not mark the merged snapshot as a shared baseline.
+    return lastSync;
+  }));
+}
 
 export function isSyncRunning() {
   return syncRunningDepth > 0;
@@ -74,10 +133,7 @@ function assertKnownConfiguredProvider(config, provider) {
   }
 }
 
-function ensureNoExactDuplicateFolders({ force, snapshot, operation, side }) {
-  if (force) {
-    return;
-  }
+function ensureNoExactDuplicateFolders({ snapshot, operation, side }) {
   const duplicates = summarizeExactDuplicateFolders(snapshot);
   if (duplicates.extraFolders === 0) {
     return;
@@ -115,7 +171,7 @@ async function persistCreatedGistId(workingConfig, updateResult) {
 
 // ---- 推送 ----
 
-function buildPushResult(config, { fileSha, commitSha = "", localHash, force = false, noop = false }) {
+function buildPushResult(config, { fileSha, commitSha = "", localHash, noop = false }) {
   return {
     lastSync: {
       at: new Date().toISOString(),
@@ -123,14 +179,13 @@ function buildPushResult(config, { fileSha, commitSha = "", localHash, force = f
       provider: config.provider,
       fileSha,
       commitSha,
-      noop: Boolean(noop),
-      force: Boolean(force)
+      noop: Boolean(noop)
     },
     nextSyncState: makeSyncState(config, fileSha, localHash)
   };
 }
 
-async function pushToRemoteForConfig(config, { force = false, local, syncStateStore } = {}) {
+async function pushToRemoteForConfig(config, { local, syncStateStore } = {}) {
   const client = createProviderClient(config);
   const localSnapshot = local || (await getLocalSnapshotAndHash());
   const scopedStateStore = syncStateStore || normalizeSyncStateStore(await getSyncState());
@@ -145,7 +200,6 @@ async function pushToRemoteForConfig(config, { force = false, local, syncStateSt
   }
 
   ensurePushNoConflict({
-    force,
     syncState,
     remote,
     localHash: localSnapshot.localHash,
@@ -158,25 +212,23 @@ async function pushToRemoteForConfig(config, { force = false, local, syncStateSt
     return buildPushResult(config, {
       fileSha: remote.sha,
       localHash: localSnapshot.localHash,
-      noop: true,
-      force
+      noop: true
     });
   }
 
   const payload = JSON.stringify(localSnapshot.snapshot, null, 2);
-  const finalizePushResult = async (result, forceValue) => {
+  const finalizePushResult = async (result) => {
     const effectiveConfig = await persistCreatedGistId(config, result);
     return buildPushResult(effectiveConfig, {
       fileSha: result.fileSha,
       commitSha: result.commitSha,
-      localHash: localSnapshot.localHash,
-      force: forceValue
+      localHash: localSnapshot.localHash
     });
   };
 
   try {
     const result = await client.updateRemoteFile(payload, remote.sha);
-    return await finalizePushResult(result, force);
+    return await finalizePushResult(result);
   } catch (error) {
     if (!isRemoteShaConflictError(error)) {
       throw error;
@@ -185,30 +237,15 @@ async function pushToRemoteForConfig(config, { force = false, local, syncStateSt
     // Contents API 提交竞态：远端在 GET 与 PUT 之间被更新（409）。
     const latestRemote = await client.getRemoteFile();
     if (!latestRemote.exists) {
-      if (!force) {
-        throwConflictError("检测到冲突：远端文件在推送过程中被删除。", {
-          operation: "push",
-          type: "remote_deleted_during_update"
-        });
-      }
-
-      try {
-        const retryCreateResult = await client.updateRemoteFile(payload, null);
-        return await finalizePushResult(retryCreateResult, true);
-      } catch (retryError) {
-        if (isRemoteShaConflictError(retryError)) {
-          throw new Error("远端文件正在被频繁更新，强制推送失败。请先暂停其他设备同步后重试。");
-        }
-        throw retryError;
-      }
+      throwConflictError("检测到冲突：远端文件在推送过程中被删除。", {
+        operation: "push",
+        type: "remote_deleted_during_update"
+      });
     }
 
     const latestRemoteSnapshot = parseSnapshotText(latestRemote.contentText || "");
-    const latestRemoteHash = await hashSnapshot(latestRemoteSnapshot);
-
-    if (!force) {
-      throwConflictError(
-        "检测到冲突：远端在推送提交时已更新，请先拉取再推送。",
+    throwConflictError(
+        "检测到冲突：远端在推送提交时已更新，请先解决冲突再推送。",
         withPreview(
           {
             operation: "push",
@@ -218,30 +255,10 @@ async function pushToRemoteForConfig(config, { force = false, local, syncStateSt
           latestRemoteSnapshot
         )
       );
-    }
-
-    if (latestRemoteHash === localSnapshot.localHash) {
-      return buildPushResult(config, {
-        fileSha: latestRemote.sha,
-        localHash: localSnapshot.localHash,
-        noop: true,
-        force: true
-      });
-    }
-
-    try {
-      const retryResult = await client.updateRemoteFile(payload, latestRemote.sha);
-      return await finalizePushResult(retryResult, true);
-    } catch (retryError) {
-      if (isRemoteShaConflictError(retryError)) {
-        throw new Error("远端文件正在被频繁更新，强制推送失败。请先暂停其他设备同步后重试。");
-      }
-      throw retryError;
-    }
   }
 }
 
-function buildMultiProviderLastSync(results, force) {
+function buildMultiProviderLastSync(results) {
   const providers = results.map((item) => item.lastSync.provider);
   return {
     at: new Date().toISOString(),
@@ -249,17 +266,16 @@ function buildMultiProviderLastSync(results, force) {
     provider: providers.join(","),
     providers,
     noop: results.every((item) => Boolean(item.lastSync.noop)),
-    force: Boolean(force),
     syncAllProviders: true,
     items: results.map((item) => item.lastSync)
   };
 }
 
-export async function pushToRemote({ force = false, provider = "", syncAllProviders = null } = {}) {
+export async function pushToRemote({ provider = "", syncAllProviders = null } = {}) {
   return syncOperations.run("pushToRemote", () => withSyncRun(async () => {
     const config = await getConfig();
     const [local, rawSyncState] = await Promise.all([getLocalSnapshotAndHash(), getSyncState()]);
-    ensureNoExactDuplicateFolders({ force, snapshot: local.snapshot, operation: "push", side: "local" });
+    ensureNoExactDuplicateFolders({ snapshot: local.snapshot, operation: "push", side: "local" });
     const syncStateStore = normalizeSyncStateStore(rawSyncState);
     const selectedProvider = typeof provider === "string" ? provider.trim() : "";
     const hasSyncAllOverride = typeof syncAllProviders === "boolean";
@@ -268,7 +284,7 @@ export async function pushToRemote({ force = false, provider = "", syncAllProvid
     if (selectedProvider) {
       assertKnownConfiguredProvider(config, selectedProvider);
 
-      const result = await pushToRemoteForConfig(withProvider(config, selectedProvider), { force, local, syncStateStore });
+      const result = await pushToRemoteForConfig(withProvider(config, selectedProvider), { local, syncStateStore });
       const nextSyncStateStore = setScopedSyncState(syncStateStore, result.nextSyncState);
       await saveSyncState(nextSyncStateStore);
       await saveLastSync(result.lastSync);
@@ -276,7 +292,7 @@ export async function pushToRemote({ force = false, provider = "", syncAllProvid
     }
 
     if (!shouldSyncAllProviders) {
-      const result = await pushToRemoteForConfig(config, { force, local, syncStateStore });
+      const result = await pushToRemoteForConfig(config, { local, syncStateStore });
       const nextSyncStateStore = setScopedSyncState(syncStateStore, result.nextSyncState);
       await saveSyncState(nextSyncStateStore);
       await saveLastSync(result.lastSync);
@@ -289,7 +305,7 @@ export async function pushToRemote({ force = false, provider = "", syncAllProvid
     }
 
     const settled = await Promise.allSettled(
-      providers.map((item) => pushToRemoteForConfig(withProvider(config, item), { force, local, syncStateStore }))
+      providers.map((item) => pushToRemoteForConfig(withProvider(config, item), { local, syncStateStore }))
     );
 
     const results = [];
@@ -313,8 +329,7 @@ export async function pushToRemote({ force = false, provider = "", syncAllProvid
     }
 
     if (failures.length > 0) {
-      // 优先抛冲突错误，保留弹窗的冲突预览/强制重试交互；
-      // 强制重试会全量重推，已成功平台因内容一致走 noop，幂等安全。
+      // 优先抛冲突错误，让弹窗打开对应平台的合并页。
       if (results.length > 0) {
         await saveLastSync({
           at: new Date().toISOString(),
@@ -322,7 +337,6 @@ export async function pushToRemote({ force = false, provider = "", syncAllProvid
           provider: results.map((item) => item.lastSync.provider).join(","),
           providers: results.map((item) => item.lastSync.provider),
           partial: true,
-          force: Boolean(force),
           syncAllProviders: true,
           items: results.map((item) => item.lastSync),
           failures: failures.map((item) => ({ provider: item.provider, message: item.error?.message || String(item.error) }))
@@ -330,6 +344,7 @@ export async function pushToRemote({ force = false, provider = "", syncAllProvid
       }
       const conflictFailure = failures.find((item) => isConflictError(item.error));
       if (conflictFailure) {
+        conflictFailure.error.details = { ...conflictFailure.error.details, provider: conflictFailure.provider };
         throw conflictFailure.error;
       }
       const succeeded = results.map((item) => item.lastSync.provider);
@@ -341,7 +356,7 @@ export async function pushToRemote({ force = false, provider = "", syncAllProvid
       throw error;
     }
 
-    const lastSync = buildMultiProviderLastSync(results, force);
+    const lastSync = buildMultiProviderLastSync(results);
     await saveLastSync(lastSync);
     return lastSync;
   }));
@@ -349,7 +364,7 @@ export async function pushToRemote({ force = false, provider = "", syncAllProvid
 
 // ---- 拉取 ----
 
-export async function pullFromRemote({ force = false, provider = "" } = {}) {
+export async function pullFromRemote({ provider = "" } = {}) {
   return syncOperations.run("pullFromRemote", () => withSyncRun(async () => {
     const config = await getConfig();
     const selectedProvider = typeof provider === "string" ? provider.trim() : "";
@@ -364,14 +379,13 @@ export async function pullFromRemote({ force = false, provider = "" } = {}) {
 
     const remote = await client.getRemoteFile();
     const { snapshot: remoteSnapshot, remoteHash } = await getRemoteSnapshotAndHash(remote);
-    ensureNoExactDuplicateFolders({ force, snapshot: remoteSnapshot, operation: "pull", side: "remote" });
+    ensureNoExactDuplicateFolders({ snapshot: remoteSnapshot, operation: "pull", side: "remote" });
 
     const [local, rawSyncState] = await Promise.all([getLocalSnapshotAndHash(), getSyncState()]);
     const syncStateStore = normalizeSyncStateStore(rawSyncState);
     const syncState = getScopedSyncState(workingConfig, syncStateStore);
 
     ensurePullNoConflict({
-      force,
       syncState,
       remote,
       localHash: local.localHash,
@@ -381,7 +395,7 @@ export async function pullFromRemote({ force = false, provider = "" } = {}) {
     });
 
     if (remoteHash !== local.localHash) {
-      await importSnapshot(remoteSnapshot, { allowExactDuplicates: force });
+      await importSnapshot(remoteSnapshot, { expectedLocalHash: local.localHash });
     }
 
     const nextSyncState = makeSyncState(workingConfig, remote.sha, remoteHash);
@@ -392,8 +406,7 @@ export async function pullFromRemote({ force = false, provider = "" } = {}) {
       direction: "pull",
       provider: workingConfig.provider,
       fileSha: remote.sha,
-      noop: remoteHash === local.localHash,
-      force: Boolean(force)
+      noop: remoteHash === local.localHash
     };
     await saveLastSync(lastSync);
 
