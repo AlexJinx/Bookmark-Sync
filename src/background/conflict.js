@@ -157,7 +157,6 @@ export function throwConflictError(message, details) {
 }
 
 // Contents API 在 sha 过期时返回 409（真正的 compare-and-swap）。
-// Gist 的 PATCH 无此机制，此判定对 gist 永远为 false —— 属预期行为。
 export function isRemoteShaConflictError(error) {
   const message = String(error?.message || error || "").toLowerCase();
   if (!message.includes("409")) {

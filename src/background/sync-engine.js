@@ -1,6 +1,6 @@
 import { exportSnapshot, importSnapshot, validateSnapshot } from "../core/bookmarks/service.js";
 import { createProviderClient, PROVIDER_IDS } from "../providers/registry.js";
-import { getConfig, saveConfig, saveLastSync, getSyncState, saveSyncState } from "../core/storage.js";
+import { getConfig, saveLastSync, getSyncState, saveSyncState } from "../core/storage.js";
 import { isProviderConfigured, getConfiguredProviders } from "../core/config.js";
 import { hashSnapshot, parseSnapshotText } from "../core/snapshot/hash.js";
 import { countSnapshotBookmarks } from "../core/snapshot/count.js";
@@ -49,7 +49,6 @@ export async function submitMerge({ provider, expected, snapshot, direction = "p
     if (!["push", "pull"].includes(direction)) throw new Error("未知合并方向");
     const config = withProvider(await getConfig(), provider);
     assertKnownConfiguredProvider(config, provider);
-    if (direction === "push" && provider === "gist") throw new Error("Gist 不支持原子版本校验，暂不支持合并提交。");
     validateSnapshot(snapshot);
     ensureNoExactDuplicateFolders({ snapshot, operation: direction, side: direction === "pull" ? "local" : "remote" });
     const local = await getLocalSnapshotAndHash();
@@ -146,29 +145,6 @@ function ensureNoExactDuplicateFolders({ snapshot, operation, side }) {
   });
 }
 
-// Gist 首次推送会自动创建 Gist；把返回的 id 写回持久化配置，
-// 并返回携带新 gistId 的工作配置（scope 计算必须用新 id）。
-async function persistCreatedGistId(workingConfig, updateResult) {
-  const createdGistId = updateResult?.createdGistId;
-  if (!createdGistId) {
-    return workingConfig;
-  }
-
-  const stored = await getConfig();
-  if (!stored.gist?.gistId) {
-    stored.gist.gistId = createdGistId;
-    await saveConfig(stored);
-  }
-
-  return {
-    ...workingConfig,
-    gist: {
-      ...workingConfig.gist,
-      gistId: createdGistId
-    }
-  };
-}
-
 // ---- 推送 ----
 
 function buildPushResult(config, { fileSha, commitSha = "", localHash, noop = false }) {
@@ -217,9 +193,8 @@ async function pushToRemoteForConfig(config, { local, syncStateStore } = {}) {
   }
 
   const payload = JSON.stringify(localSnapshot.snapshot, null, 2);
-  const finalizePushResult = async (result) => {
-    const effectiveConfig = await persistCreatedGistId(config, result);
-    return buildPushResult(effectiveConfig, {
+  const finalizePushResult = (result) => {
+    return buildPushResult(config, {
       fileSha: result.fileSha,
       commitSha: result.commitSha,
       localHash: localSnapshot.localHash

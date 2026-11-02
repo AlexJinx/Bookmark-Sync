@@ -10,10 +10,6 @@ h2 span { font-size: 12px; font-weight: 400; color: var(--muted); }
 p, label { font-size: 13px; line-height: 1.8; }
 #destination { margin: 10px 0 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .notice { margin: 0 0 22px; padding-left: 14px; border-left: 3px solid #b9b0f3; color: var(--muted); font-size: 12px; }
-#demoPanel { border: 1px solid #d7e8e3; border-radius: 12px; padding: 18px 22px; margin: 0 0 22px; background: #eff8f5; }
-#demoPanel h2 { color: #267868; font-size: 13px; }
-#demoPanel p { color: #648278; margin: 8px 0 12px; font-size: 12px; }
-#demoPanel button { margin: 3px 6px 3px 0; padding: 7px 12px; background: #ffffffb3; }
 section { min-width: 0; }
 .sources { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
 .merge-editor, .result { background: #fff; border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 6px 24px #27345b05; }
@@ -56,9 +52,6 @@ li ul { margin: 6px 0 0; border-left: 1px solid var(--line); padding-left: 12px;
 #resultTree { max-height: 460px; overflow: auto; padding: 4px 24px 20px; }
 #resultTree h3 { font-size: 12px; color: var(--remote); margin: 18px 0 6px; }
 #resultTree > ul { margin: 0; }
-#demoAppliedTree { max-height: 360px; overflow: auto; padding: 0 24px 20px; }
-#demoAppliedTree h3 { font-size: 12px; color: var(--remote); }
-.demo-applied-note { margin: 16px 24px; font-size: 12px; color: var(--muted); }
 details { margin: 16px 0; }
 .result details { padding: 14px 24px; margin: 0; border-top: 1px solid var(--line); background: #fafbfd; }
 summary { cursor: pointer; font-size: 11px; color: var(--muted); padding: 5px 0; }

@@ -1,9 +1,11 @@
+import { migrateConfig } from "./core/config.js";
+
 export const CONFIG_EXPORT_TYPE = "bookmark-sync-config";
 export const CONFIG_EXPORT_VERSION = 1;
 
 function withoutTokens(config) {
   const cloned = structuredClone(config || {});
-  for (const provider of ["github", "gitee", "gist"]) {
+  for (const provider of ["github", "gitee"]) {
     if (!cloned[provider] || typeof cloned[provider] !== "object") {
       continue;
     }
@@ -22,6 +24,6 @@ export function createConfigExportPayload(
     extensionVersion,
     exportedAt,
     containsTokens: Boolean(includeTokens),
-    config: includeTokens ? structuredClone(config || {}) : withoutTokens(config)
+    config: includeTokens ? migrateConfig(config) : withoutTokens(migrateConfig(config))
   };
 }

@@ -1,6 +1,5 @@
 import { GitHubProvider } from "./github.js";
 import { GiteeProvider } from "./gitee.js";
-import { GistProvider } from "./gist.js";
 
 // Provider 单一事实来源。新增平台 = 一个 Provider 类 + 一条注册项（+ manifest host_permissions）。
 //
@@ -45,19 +44,6 @@ export const PROVIDERS = Object.freeze({
       scoped?.owner && scoped?.repo && scoped?.branch
         ? `https://gitee.com/${scoped.owner}/${scoped.repo}/commits/${scoped.branch}`
         : ""
-  }),
-  gist: Object.freeze({
-    id: "gist",
-    label: "Gist",
-    Provider: GistProvider,
-    requiredFields: Object.freeze(["token", "fileName"]),
-    defaults: Object.freeze({
-      token: "",
-      gistId: "",
-      fileName: "bookmarks.json"
-    }),
-    scopeOf: (scoped) => ["gist", scoped?.gistId || "", scoped?.fileName || ""].join("|"),
-    historyUrl: (scoped) => (scoped?.gistId ? `https://gist.github.com/${scoped.gistId}/revisions` : "")
   })
 });
 

@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createMergePlan } from "../src/core/snapshot/merge-plan.js";
-import { createDemoSession } from "../src/ui/merge/demo.js";
 import { countSnapshotBookmarks } from "../src/core/snapshot/count.js";
 const b = (title, url = "https://example.com") => ({ type: "bookmark", title, url });
 const s = children => ({ version: 1, roots: [{ key: "bookmark_bar", title: "书签", children }] });
 
-test("demo visual choices merge to three bookmarks or preserve both titles", async () => {
-  const preview = await createDemoSession().load();
+test("visual choices merge to three bookmarks or preserve both titles", () => {
+  const preview = {
+    local: s([b("local title", "https://example.com/docs"), b("local new", "https://example.com/local")]),
+    remote: s([b("remote title", "https://example.com/docs"), b("remote new", "https://example.com/remote")])
+  };
   const plan = createMergePlan(preview.local, preview.remote);
   assert.equal(plan.conflicts.length, 3);
   assert.throws(() => plan.build({}), /完成所有/);

@@ -13,7 +13,6 @@
   ],
   "host_permissions": [
     "https://api.github.com/*",
-    "https://gist.githubusercontent.com/*",
     "https://gitee.com/api/*"
   ],
   "background": {

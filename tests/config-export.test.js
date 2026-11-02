@@ -3,10 +3,11 @@ import test from "node:test";
 import { createConfigExportPayload } from "../src/config-export.js";
 
 test("config export includes provider tokens by default without mutating config", () => {
-  const config = { github: { token: "test-github" }, gitee: { token: "test-gitee" }, gist: { token: "test-gist" } };
+  const config = { github: { token: "test-github" }, gitee: { token: "test-gitee" } };
   const payload = createConfigExportPayload(config);
   assert.equal(payload.containsTokens, true);
-  assert.deepEqual(payload.config, config);
+  assert.equal(payload.config.github.token, config.github.token);
+  assert.equal(payload.config.gitee.token, config.gitee.token);
   payload.config.github.token = "changed";
   assert.equal(config.github.token, "test-github");
 });

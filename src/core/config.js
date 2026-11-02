@@ -48,13 +48,17 @@ export function deepMerge(base, patch) {
 }
 
 // 配置迁移管线：v1（无 configVersion）-> v2 结构上由 deepMerge 补齐默认值即可，
-// 管线本身为未来 provider 字段变化预留位置。未知的 provider 区段必须原样保留
-// （用户降级/回滚扩展版本时不丢配置）——deepMerge 天然保留 patch 中的未知键。
+// 保留其他未知字段，但清除已停用的平台凭据。
 export function migrateConfig(raw) {
   const merged = deepMerge(DEFAULT_CONFIG, raw || {});
+  delete merged.gist;
   merged.configVersion = CONFIG_VERSION;
   if (!PROVIDER_IDS.includes(merged.provider)) {
     merged.provider = DEFAULT_CONFIG.provider;
+    // Never redirect an old automatic sync target to a different repository.
+    merged.autoSyncEnabled = false;
+    merged.changeSync = { ...DEFAULT_CONFIG.changeSync, ...merged.changeSync, enabled: false };
+    merged.syncAllProviders = false;
   }
   return merged;
 }

@@ -39,15 +39,12 @@ const AUTH_HINTS = {
   github:
     "请确认填写的是原始 Token，不要包含 Bearer/token 前缀、引号或换行，并检查该 Token 是否已过期或被撤销。",
   gitee:
-    "请确认填写的是原始 Token，不要包含 Bearer/token 前缀、引号或换行，并检查该 Token 是否仍然有效。",
-  gist:
-    "请确认填写的是 classic Personal Access Token 且勾选了 gist 权限（fine-grained Token 不支持 Gist），并检查是否已过期。"
+    "请确认填写的是原始 Token，不要包含 Bearer/token 前缀、引号或换行，并检查该 Token 是否仍然有效。"
 };
 
 const AUTH_LABELS = {
   github: "GitHub",
-  gitee: "Gitee",
-  gist: "GitHub Gist"
+  gitee: "Gitee"
 };
 
 export function buildAuthErrorMessage(providerId, details) {
@@ -81,7 +78,7 @@ export async function parseError(response, providerId = "") {
 // Provider 抽象契约（同步引擎唯一依赖的三个方法）：
 //   testConnection() -> { provider, summary, ... }
 //   getRemoteFile()  -> { exists, sha, contentText }   sha 是不透明版本令牌
-//   updateRemoteFile(contentText, sha) -> { fileSha, commitSha, createdGistId? }
+//   updateRemoteFile(contentText, sha) -> { fileSha, commitSha }
 export class BaseProvider {
   constructor(id, config) {
     this.id = id;

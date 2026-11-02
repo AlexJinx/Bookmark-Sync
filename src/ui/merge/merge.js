@@ -2,29 +2,17 @@ import { send } from "../shared/messaging.js";
 import { validateSnapshot } from "../../core/bookmarks/service.js";
 import { countSnapshotBookmarks } from "../../core/snapshot/count.js";
 import { getProviderLabel } from "../../providers/registry.js";
-import { createMergeSession } from "./demo.js";
 import { createMergePlan } from "../../core/snapshot/merge-plan.js";
 
 const $ = id => document.getElementById(id);
 const provider = new URLSearchParams(location.search).get("provider") || "";
-const demo = new URLSearchParams(location.search).get("mode") === "demo";
 const direction = new URLSearchParams(location.search).get("direction") === "pull" ? "pull" : "push";
-let session = createMergeSession({ demo, provider, send, direction });
-if (!demo && direction === "pull") {
+if (direction === "pull") {
   document.title = "解决拉取冲突";
   document.querySelector("h1").textContent = "解决拉取冲突";
   $("submitNote").textContent = "合并结果仅应用到本地书签，不写入云端。应用前自动备份，导入失败会尝试回滚。";
   $("confirmLabel").textContent = "我已检查合并结果，确认用它更新本地书签";
   $("submit").textContent = "应用到本地书签";
-}
-if (demo) {
-  document.title = direction === "pull" ? "模拟拉取冲突" : "模拟推送冲突";
-  document.querySelector("h1").textContent = document.title;
-  $("demoPanel").hidden = false;
-  $("submitNote").textContent = "所有数据仅存在于当前页面内存中。模拟提交不写入书签、配置、备份、同步记录或任何云端仓库。";
-  $("confirmLabel").textContent = direction === "pull" ? "我已检查结果，确认应用到模拟本地（不写入真实书签）" : "我已检查结果，确认进行模拟提交（不写入真实数据）";
-  $("submit").textContent = direction === "pull" ? "应用到模拟本地" : "模拟提交";
-  $("demoLocalChange").hidden = direction !== "pull";
 }
 let preview = null;
 let busy = false;
@@ -39,7 +27,7 @@ function controls() {
   for (const id of ["download", "validate"]) $(id).disabled = busy || !complete;
   for (const input of document.querySelectorAll('#conflicts input, #conflicts button')) input.disabled = busy || submitted;
   $("reload").disabled = busy;
-  $("submit").disabled = busy || !complete || submitted || (!demo && direction === "push" && provider === "gist") || !$("confirm").checked;
+  $("submit").disabled = busy || !complete || submitted || !$("confirm").checked;
 }
 function tree(nodes, parent) {
   const list = document.createElement("ul");
@@ -130,11 +118,12 @@ async function run(task) {
   finally { busy = false; controls(); }
 }
 async function load() {
-  const fresh = await session.load();
+  // Reject retired links rather than silently turning a test page into a real operation.
+  if (new URLSearchParams(location.search).has("mode")) throw new Error("此测试入口已移除，请从扩展弹窗进入真实冲突解决页。");
+  const fresh = await send("getMergePreview", { provider });
   validateSnapshot(fresh.local);
   if (fresh.remote) validateSnapshot(fresh.remote);
   preview = fresh;
-  $("demoApplied").hidden = true;
   plan = createMergePlan(fresh.local, fresh.remote);
   selections = {}; dirty = false;
   $("local").value = json(fresh.local);
@@ -142,8 +131,8 @@ async function load() {
   submitted = false;
   $("confirm").checked = false;
   renderChoices();
-  $("destination").textContent = demo ? fresh.scope : `${getProviderLabel(provider)} · ${fresh.scope}`;
-  status(!demo && direction === "push" && provider === "gist" ? "Gist 暂不支持安全合并提交，可以选择并下载结果。" : "请逐项选择要保留的内容，完成后检查合并预览。");
+  $("destination").textContent = `${getProviderLabel(provider)} · ${fresh.scope}`;
+  status("请逐项选择要保留的内容，完成后检查合并预览。");
 }
 $("reload").addEventListener("click", () => {
   if (dirty && !window.confirm("重新读取将清除当前选择，请先下载已完成的结果。继续？")) return;
@@ -159,44 +148,11 @@ $("download").addEventListener("click", () => {
 $("submit").addEventListener("click", () => run(async () => {
   if (!$("confirm").checked || submitted) return;
   const snapshot = parseResult();
-  await session.submit(snapshot, preview);
+  await send("submitMerge", { provider, direction, snapshot, expected: {
+    scope: preview.scope, localHash: preview.localHash, remoteSha: preview.remoteSha, remoteHash: preview.remoteHash
+  } });
   submitted = true; dirty = false; $("confirm").checked = false;
-  if (demo && direction === "pull") {
-    const applied = await session.load();
-    $("demoAppliedTree").replaceChildren();
-    for (const root of applied.local.roots) {
-      const heading = document.createElement("h3"); heading.textContent = root.title || root.key;
-      $("demoAppliedTree").append(heading); tree(root.children, $("demoAppliedTree"));
-    }
-    $("demoAppliedCount").textContent = `共 ${countSnapshotBookmarks(applied.local)} 条书签`;
-    $("demoApplied").hidden = false;
-    $("demoApplied").scrollIntoView({ block: "nearest" });
-    status("合并结果已应用到模拟本地，模拟云端未修改。真实书签、配置和云端均未读写。可重新读取查看当前模拟数据，或重置后再次体验。");
-    return;
-  }
-  status(demo ? `模拟提交成功，共 ${countSnapshotBookmarks(snapshot)} 条书签。结果保留在上方合并预览中，未修改任何真实数据。` : direction === "pull" ? "合并结果已应用到本地书签，云端未修改。应用前备份保存在扩展本地存储 lastMergeBackup。" : "合并结果已提交到当前云端。本地书签未修改；其他平台未提交。提交前备份保存在扩展本地存储 lastMergeBackup。");
+  status(direction === "pull" ? "合并结果已应用到本地书签，云端未修改。应用前备份保存在扩展本地存储 lastMergeBackup。" : "合并结果已提交到当前云端。本地书签未修改；其他平台未提交。提交前备份保存在扩展本地存储 lastMergeBackup。");
 }));
-$("demoExample").addEventListener("click", () => {
-  if (!demo || busy) return;
-  if (dirty && !window.confirm("用示例结果替换当前模拟草稿？")) return;
-  selections = Object.fromEntries(plan.conflicts.map(item => [item.id, item.local && item.remote ? "local" : "both"]));
-  dirty = true; submitted = false; renderChoices();
-});
-$("demoChange").addEventListener("click", () => {
-  if (!demo || busy) return;
-  session.changeRemote();
-  status("模拟云端已产生新版本，现在提交会被阻止。请先下载结果，再重新读取两侧数据并重新选择。");
-});
-$("demoLocalChange").addEventListener("click", () => {
-  if (!demo || direction !== "pull" || busy) return;
-  session.changeLocal();
-  $("demoApplied").hidden = true;
-  status("模拟本地新增了一条书签，当前旧版本应用将被阻止。请重新读取两侧数据后再次选择。");
-});
-$("demoReset").addEventListener("click", () => {
-  if (!demo || busy || (dirty && !window.confirm("清除模拟草稿并重新开始？"))) return;
-  session = createMergeSession({ demo: true, direction }); dirty = false;
-  run(load);
-});
 window.addEventListener("beforeunload", event => { if (dirty) { event.preventDefault(); event.returnValue = ""; } });
 run(load);
