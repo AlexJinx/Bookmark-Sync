@@ -1,7 +1,7 @@
 # Bookmark Sync 隐私政策 / Privacy Policy
 
-生效及更新日期 / Effective and updated: 2026-11-02  
-适用版本 / Applies to: Bookmark Sync 0.2.1
+生效及更新日期 / Effective and updated: 2026-11-05  
+适用版本 / Applies to: Bookmark Sync 0.2.2
 
 ## 中文
 
@@ -15,7 +15,7 @@ Bookmark Sync（书签同步）是 Microsoft Edge 的书签备份与同步扩展
 
 - **书签内容**：标准书签目录中的书签标题、网址、文件夹名称、层级与顺序，以及为同步生成的快照版本和更新时间。书签网址或标题可能包含用户自行保存的个人或敏感内容。
 - **连接和认证信息**：用户输入的 GitHub/Gitee 访问令牌、账户或组织名称、仓库名称、分支和文件路径，用于连接用户指定的仓库。
-- **同步设置与状态**：推送目标、自动推送设置、最近同步时间和结果、同步基线，以及导入或合并保护所需的本地备份。
+- **同步设置与状态**：推送目标、自动推送设置、最近同步时间和结果、同步基线（包含完整共同快照与已接受的两侧快照），以及导入或合并保护所需的本地备份。
 - **用户仓库的提交信息**：查看“时光胶囊”时，从配置的仓库读取提交者名称或用户名、提交时间、提交说明和历史书签快照，用于展示提交记录与书签差异。
 
 扩展不读取浏览器浏览历史、打开的标签页、Cookie、网页正文或键盘活动；不主动访问书签所指向的网页。不提供广告、用户行为追踪或向开发者发送遥测数据的功能。
@@ -66,7 +66,7 @@ The extension processes the following information only to provide those features
 
 - **Bookmark content:** bookmark titles, URLs, folder names, hierarchy and order in standard bookmark folders, plus snapshot version and update timestamps generated for synchronization. User-saved titles and URLs may themselves contain personal or sensitive content.
 - **Connection and authentication information:** user-provided GitHub/Gitee access tokens, account or organization names, repository names, branches and file paths.
-- **Settings and synchronization state:** push targets, automatic push settings, last synchronization results and timestamps, synchronization baselines, and local backups used to protect imports or merges.
+- **Settings and synchronization state:** push targets, automatic push settings, last synchronization results and timestamps, synchronization baselines (including complete shared snapshots and accepted local/remote snapshots), and local backups used to protect imports or merges.
 - **Repository commit information:** when the user views history, committer names or usernames, commit timestamps and messages, and historical bookmark snapshots from the configured repository, used to display commits and bookmark changes.
 
 The extension does not read browser browsing history, open tabs, cookies, webpage bodies or keyboard activity, and does not visit bookmarked webpages. It includes no advertising, behavior tracking or telemetry reporting to the developer.
