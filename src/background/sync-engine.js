@@ -16,7 +16,8 @@ import {
   normalizeSyncStateStore,
   getScopedSyncState,
   setScopedSyncState,
-  makeSyncState
+  makeSyncState,
+  makePendingSyncState
 } from "./sync-state.js";
 import { getSyncScope } from "./sync-state.js";
 import { isConflictError } from "./conflict.js";
@@ -29,17 +30,30 @@ import { summarizeExactDuplicateFolders } from "../snapshot-inspector.js";
 let syncRunningDepth = 0;
 const syncOperations = createSerialOperationQueue();
 
-export async function getMergePreview(provider) {
+export async function getMergePreview(provider, direction = "push") {
   return syncOperations.run("mergePreview", async () => {
     const config = withProvider(await getConfig(), provider);
     assertKnownConfiguredProvider(config, provider);
     const local = await getLocalSnapshotAndHash();
     const remote = await createProviderClient(config).getRemoteFile();
     const remoteSnapshot = remote.exists ? parseSnapshotText(remote.contentText || "") : null;
+    if (remoteSnapshot) validateSnapshot(remoteSnapshot);
+    const syncState = getScopedSyncState(config, normalizeSyncStateStore(await getSyncState()));
+    const remoteHash = remoteSnapshot ? await hashSnapshot(remoteSnapshot) : null;
+    let reason = null;
+    try {
+      (direction === "pull" ? ensurePullNoConflict : ensurePushNoConflict)({
+        syncState, remote, localHash: local.localHash, remoteHash,
+        localSnapshot: local.snapshot, remoteSnapshot
+      });
+    } catch (error) {
+      if (!isConflictError(error)) throw error;
+      reason = error.details;
+    }
     return {
       provider, scope: getSyncScope(config), local: local.snapshot, remote: remoteSnapshot,
       localHash: local.localHash, remoteSha: remote.sha || null,
-      remoteHash: remoteSnapshot ? await hashSnapshot(remoteSnapshot) : null
+      remoteHash, base: syncState?.baseSnapshot || null, pendingMerge: syncState?.pendingMerge || null, reason
     };
   });
 }
@@ -55,6 +69,7 @@ export async function submitMerge({ provider, expected, snapshot, direction = "p
     const client = createProviderClient(config);
     const remote = await client.getRemoteFile();
     const remoteSnapshot = remote.exists ? parseSnapshotText(remote.contentText || "") : null;
+    if (remoteSnapshot) validateSnapshot(remoteSnapshot);
     const remoteHash = remoteSnapshot ? await hashSnapshot(remoteSnapshot) : null;
     if (!expected || getSyncScope(config) !== expected.scope || local.localHash !== expected.localHash ||
         (remote.sha || null) !== expected.remoteSha || remoteHash !== expected.remoteHash) {
@@ -66,11 +81,13 @@ export async function submitMerge({ provider, expected, snapshot, direction = "p
     } });
     if (direction === "pull") {
       await importSnapshot(snapshot, { expectedLocalHash: expected.localHash });
-      // Only equal snapshots are a shared baseline. Other choices remain unsynced.
-      const mergedHash = await hashSnapshot(snapshot);
-      if (remote.exists && mergedHash === remoteHash) {
+      if (remote.exists) {
         const state = normalizeSyncStateStore(await getSyncState());
-        await saveSyncState(setScopedSyncState(state, makeSyncState(config, remote.sha, mergedHash)));
+        const actual = await getLocalSnapshotAndHash();
+        const next = actual.localHash === remoteHash
+          ? makeSyncState(config, remote.sha, actual.localHash, actual.snapshot)
+          : makePendingSyncState(config, remote.sha, actual.localHash, actual.snapshot, remoteSnapshot, "pull", getScopedSyncState(config, state));
+        await saveSyncState(setScopedSyncState(state, next));
       }
       const lastSync = { at: new Date().toISOString(), direction, provider, merged: true, fileSha: remote.sha };
       await saveLastSync(lastSync);
@@ -81,7 +98,11 @@ export async function submitMerge({ provider, expected, snapshot, direction = "p
     const lastSync = { at: new Date().toISOString(), direction: "push", provider, merged: true,
       fileSha: result.fileSha, commitSha: result.commitSha };
     await saveLastSync(lastSync);
-    // Local bookmarks remain unchanged, so do not mark the merged snapshot as a shared baseline.
+    const state = normalizeSyncStateStore(await getSyncState());
+    const next = await hashSnapshot(snapshot) === local.localHash
+      ? makeSyncState(config, result.fileSha, local.localHash, snapshot)
+      : makePendingSyncState(config, result.fileSha, local.localHash, local.snapshot, snapshot, "push", getScopedSyncState(config, state));
+    await saveSyncState(setScopedSyncState(state, next));
     return lastSync;
   }));
 }
@@ -119,6 +140,7 @@ async function getRemoteSnapshotAndHash(remote) {
     throw new Error("远端文件不存在，请先执行一次推送");
   }
   const snapshot = parseSnapshotText(remote.contentText || "");
+  validateSnapshot(snapshot);
   const remoteHash = await hashSnapshot(snapshot);
   return { snapshot, remoteHash };
 }
@@ -147,7 +169,7 @@ function ensureNoExactDuplicateFolders({ snapshot, operation, side }) {
 
 // ---- 推送 ----
 
-function buildPushResult(config, { fileSha, commitSha = "", localHash, noop = false }) {
+function buildPushResult(config, { fileSha, commitSha = "", localHash, local, snapshot, previousState, shared = true, noop = false }) {
   return {
     lastSync: {
       at: new Date().toISOString(),
@@ -155,9 +177,11 @@ function buildPushResult(config, { fileSha, commitSha = "", localHash, noop = fa
       provider: config.provider,
       fileSha,
       commitSha,
-      noop: Boolean(noop)
+      noop: Boolean(noop),
+      needsPull: !shared
     },
-    nextSyncState: makeSyncState(config, fileSha, localHash)
+    nextSyncState: shared ? makeSyncState(config, fileSha, localHash, snapshot)
+      : makePendingSyncState(config, fileSha, localHash, local, snapshot, "push", previousState)
   };
 }
 
@@ -172,32 +196,45 @@ async function pushToRemoteForConfig(config, { local, syncStateStore } = {}) {
   let remoteSnapshot = null;
   if (remote.exists) {
     remoteSnapshot = parseSnapshotText(remote.contentText || "");
+    validateSnapshot(remoteSnapshot);
     remoteHash = await hashSnapshot(remoteSnapshot);
   }
 
-  ensurePushNoConflict({
+  const snapshot = ensurePushNoConflict({
     syncState,
     remote,
     localHash: localSnapshot.localHash,
     remoteHash,
     localSnapshot: localSnapshot.snapshot,
     remoteSnapshot
-  });
+  }) || localSnapshot.snapshot;
+  validateSnapshot(snapshot);
+  ensureNoExactDuplicateFolders({ snapshot, operation: "push", side: "remote" });
+  const mergedHash = await hashSnapshot(snapshot);
+  const shared = mergedHash === localSnapshot.localHash;
 
-  if (remote.exists && remoteHash === localSnapshot.localHash) {
+  if (remote.exists && remoteHash === mergedHash) {
     return buildPushResult(config, {
       fileSha: remote.sha,
       localHash: localSnapshot.localHash,
+      snapshot, local: localSnapshot.snapshot, shared, previousState: syncState,
       noop: true
     });
   }
 
-  const payload = JSON.stringify(localSnapshot.snapshot, null, 2);
+  if (!shared) {
+    await chrome.storage.local.set({ lastMergeBackup: {
+      at: new Date().toISOString(), provider: config.provider, direction: "push", scope: getSyncScope(config),
+      local: localSnapshot.snapshot, remote: remoteSnapshot
+    } });
+  }
+  const payload = JSON.stringify(snapshot, null, 2);
   const finalizePushResult = (result) => {
     return buildPushResult(config, {
       fileSha: result.fileSha,
       commitSha: result.commitSha,
-      localHash: localSnapshot.localHash
+      localHash: localSnapshot.localHash,
+      snapshot, local: localSnapshot.snapshot, shared, previousState: syncState
     });
   };
 
@@ -241,6 +278,7 @@ function buildMultiProviderLastSync(results) {
     provider: providers.join(","),
     providers,
     noop: results.every((item) => Boolean(item.lastSync.noop)),
+    needsPull: results.some((item) => item.lastSync.needsPull),
     syncAllProviders: true,
     items: results.map((item) => item.lastSync)
   };
@@ -360,20 +398,30 @@ export async function pullFromRemote({ provider = "" } = {}) {
     const syncStateStore = normalizeSyncStateStore(rawSyncState);
     const syncState = getScopedSyncState(workingConfig, syncStateStore);
 
-    ensurePullNoConflict({
+    const snapshot = ensurePullNoConflict({
       syncState,
       remote,
       localHash: local.localHash,
       remoteHash,
       localSnapshot: local.snapshot,
       remoteSnapshot
-    });
+    }) || remoteSnapshot;
+    validateSnapshot(snapshot);
+    ensureNoExactDuplicateFolders({ snapshot, operation: "pull", side: "local" });
+    const mergedHash = await hashSnapshot(snapshot);
 
-    if (remoteHash !== local.localHash) {
-      await importSnapshot(remoteSnapshot, { expectedLocalHash: local.localHash });
+    if (mergedHash !== local.localHash) {
+      await chrome.storage.local.set({ lastMergeBackup: {
+        at: new Date().toISOString(), provider: workingConfig.provider, direction: "pull", scope: getSyncScope(workingConfig),
+        local: local.snapshot, remote: remoteSnapshot
+      } });
+      await importSnapshot(snapshot, { expectedLocalHash: local.localHash });
     }
 
-    const nextSyncState = makeSyncState(workingConfig, remote.sha, remoteHash);
+    const actual = await getLocalSnapshotAndHash();
+    const nextSyncState = actual.localHash === remoteHash
+      ? makeSyncState(workingConfig, remote.sha, remoteHash, actual.snapshot)
+      : makePendingSyncState(workingConfig, remote.sha, actual.localHash, actual.snapshot, remoteSnapshot, "pull", syncState);
     await saveSyncState(setScopedSyncState(syncStateStore, nextSyncState));
 
     const lastSync = {
@@ -381,7 +429,8 @@ export async function pullFromRemote({ provider = "" } = {}) {
       direction: "pull",
       provider: workingConfig.provider,
       fileSha: remote.sha,
-      noop: remoteHash === local.localHash
+      noop: mergedHash === local.localHash,
+      needsPush: actual.localHash !== remoteHash
     };
     await saveLastSync(lastSync);
 
@@ -494,7 +543,7 @@ export async function checkRemoteAhead() {
       }
 
       const remoteChanged = (syncState.remoteSha || null) !== (remote.sha || null);
-      const localChanged = syncState.localHash !== local.localHash;
+      const localChanged = (syncState.pendingMerge?.localHash || syncState.localHash) !== local.localHash;
       if (remoteChanged && !localChanged) {
         ahead.push(provider);
       }

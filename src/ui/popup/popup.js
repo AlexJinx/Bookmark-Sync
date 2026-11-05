@@ -284,6 +284,7 @@ function clearConflictPreview() {
 }
 
 const CONFLICT_TYPE_NAMES = {
+  merge_required: "有无法自动合并的书签变更",
   both_changed: "本地和远端均有变更",
   remote_changed: "远端已更新",
   local_changed: "本地有未同步改动",
@@ -486,6 +487,9 @@ function formatProviderCountDelta(provider, beforeCounts, afterCounts) {
 }
 
 function buildPushSuccessMessage({ pushAll, provider, result, beforeCounts, afterCounts }) {
+  if (result?.needsPull) {
+    return "云端已保留双方可合并的变更，本地未修改。如需让本地与云端一致，请从相应平台拉取。";
+  }
   if (pushAll) {
     if (result?.noop) {
       return "所有平台均已同步，无需推送";
@@ -578,7 +582,7 @@ async function onPull() {
   setStatus(`正在从 ${getProviderLabel(provider)} 拉取并导入...`);
   try {
     const result = await send(Actions.PULL_FROM_REMOTE, { provider });
-    setStatus(result?.noop ? "已是最新，无需覆盖" : "拉取并导入完成");
+    setStatus(result?.needsPush ? "已保留本地改动并合并云端内容；云端未修改，可推送以完成同步。" : result?.noop ? "已是最新，无需覆盖" : "拉取并导入完成");
     await refreshSyncSummary();
     setSyncDot("idle");
   } catch (error) {

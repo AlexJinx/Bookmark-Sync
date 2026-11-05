@@ -1,14 +1,27 @@
-function signature(node) {
-  return JSON.stringify(node.type === "folder"
-    ? { type: "folder", title: node.title || "", children: node.children.map(signature) }
-    : { type: "bookmark", title: node.title || "", url: node.url });
-}
+import { createThreeWayMergePlan } from "./three-way-merge.js";
+import { nodeSignature as signature } from "./merge-signature.js";
 
-export function createMergePlan(local, remote) {
+export function createMergePlan(local, remote, base = null, pendingMerge = null) {
+  if (pendingMerge && remote) {
+    // A directional merge changes only one side. Rebase the other side's NEW
+    // edits onto the accepted result before comparing subsequent remote edits.
+    const push = pendingMerge.direction === "push";
+    const accepted = push ? pendingMerge.remote : pendingMerge.local;
+    const previous = push ? pendingMerge.local : pendingMerge.remote;
+    const projected = createThreeWayMergePlan(push ? local : remote, accepted, previous);
+    if (!projected.conflicts.length) {
+      return createThreeWayMergePlan(push ? projected.build() : local,
+        push ? remote : projected.build(), accepted);
+    }
+    const plan = createMergePlan(local, remote);
+    for (const item of plan.conflicts) item.reason = "pending_overlap";
+    return { ...plan, pendingOverlap: true };
+  }
+  if (base && remote) return createThreeWayMergePlan(local, remote, base);
   const conflicts = [];
   function choice(left, right, path) {
     const id = String(conflicts.length);
-    conflicts.push({ id, local: left || null, remote: right || null, path });
+    conflicts.push({ id, local: left || null, remote: right || null, path, reason: "no_base" });
     return { choice: id };
   }
   function nodes(left, right, path) {
@@ -56,5 +69,5 @@ export function createMergePlan(local, remote) {
     }
     return { ...structuredClone(local), updatedAt: new Date().toISOString(), roots: roots.map(({ root, children }) => ({ ...structuredClone(root), children: resolve(children) })) };
   }
-  return { conflicts, build };
+  return { conflicts, automatic: [], hasBase: false, build };
 }

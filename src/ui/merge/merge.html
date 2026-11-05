@@ -9,8 +9,9 @@
 <body>
   <main>
     <header><div><h1>解决书签冲突</h1><p id="destination">正在读取数据…</p></div><button id="reload">重新读取两侧数据</button></header>
+    <p id="mergeReason" class="notice" role="status">正在检查需要确认的变更…</p>
     <p class="notice">左侧本地，右侧云端。勾选要保留的书签，两侧都勾选则都保留；下方实时预览结果。相同内容自动保留，文件夹项的选择作用于整个文件夹。若要删除某项，请明确选择“两边都不保留”。</p>
-    <section class="merge-editor"><h2>书签对照 <span id="progress"></span></h2><div class="column-headings"><strong>本地版本<small>当前浏览器中的书签</small></strong><strong>云端版本<small>仓库中保存的书签</small></strong></div><div id="conflicts"></div></section>
+    <section class="merge-editor"><h2>需要确认的差异 <span id="progress"></span></h2><div class="column-headings"><strong>本地版本<small id="localDescription">当前浏览器中的书签</small></strong><strong>云端版本<small id="remoteDescription">仓库中保存的书签</small></strong></div><div id="conflicts"></div></section>
     <details><summary>查看原始快照（只读）</summary><div class="sources">
 <section><h2>本地版本</h2><textarea id="local" readonly aria-label="本地书签 JSON" spellcheck="false"></textarea></section>
       <section><h2>云端版本</h2><textarea id="remote" readonly aria-label="云端书签 JSON" spellcheck="false"></textarea></section>

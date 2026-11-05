@@ -13,7 +13,7 @@ import { emit, Events } from "./events.js";
 const handlers = {
   getCommitHistory,
   getCommitDetail,
-  getMergePreview: (message) => getMergePreview(message.provider),
+  getMergePreview: (message) => getMergePreview(message.provider, message.direction),
   submitMerge: (message) => submitMerge(message),
   [Actions.GET_CONFIG]: () => getConfig(),
 

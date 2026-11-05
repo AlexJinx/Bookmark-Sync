@@ -1,6 +1,16 @@
 import { ErrorCodes } from "../core/actions.js";
 import { buildDiffSummary } from "../core/snapshot/diff.js";
 import { hasRemoteChanged, hasLocalChanged } from "./sync-state.js";
+import { createMergePlan } from "../core/snapshot/merge-plan.js";
+
+function mergeFromBase(operation, syncState, localSnapshot, remoteSnapshot) {
+  const plan = createMergePlan(localSnapshot, remoteSnapshot, syncState.baseSnapshot, syncState.pendingMerge);
+  if (plan.conflicts.length) {
+    throwConflict(`有 ${plan.conflicts.length} 项书签变更需要确认，其余可确定的变更已自动合并。`,
+      withPreview({ operation, type: "merge_required", conflictCount: plan.conflicts.length }, localSnapshot, remoteSnapshot));
+  }
+  return plan.build();
+}
 
 export class SyncConflictError extends Error {
   constructor(message, details = {}) {
@@ -54,6 +64,10 @@ export function ensurePushNoConflict({ syncState, remote, localHash, remoteHash,
     return;
   }
 
+  if ((syncState?.baseSnapshot || syncState?.pendingMerge) && localSnapshot && remoteSnapshot) {
+    return mergeFromBase("push", syncState, localSnapshot, remoteSnapshot);
+  }
+
   if (!syncState) {
     if (remoteHash === localHash) {
       return;
@@ -104,6 +118,10 @@ export function ensurePushNoConflict({ syncState, remote, localHash, remoteHash,
 export function ensurePullNoConflict({ syncState, remote, localHash, remoteHash, localSnapshot, remoteSnapshot }) {
   if (localHash === remoteHash) {
     return;
+  }
+
+  if ((syncState?.baseSnapshot || syncState?.pendingMerge) && localSnapshot && remoteSnapshot) {
+    return mergeFromBase("pull", syncState, localSnapshot, remoteSnapshot);
   }
 
   if (!syncState) {

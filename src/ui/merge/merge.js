@@ -22,6 +22,15 @@ let plan = null;
 let selections = {};
 let complete = false;
 const json = value => JSON.stringify(value, null, 2);
+const reasonLabels = {
+  ambiguous_move: "书签位置发生变化且双方都有修改，请确认此目录内容",
+  pending_overlap: "上次单向合并后出现重叠修改，请确认当前两侧内容",
+  no_base: "缺少共同历史，无法确认这是新增还是删除",
+  delete_modify: "一侧删除，另一侧修改",
+  both_modified: "两侧修改了同一项",
+  both_added: "两侧新增了内容不同的同一项",
+  ambiguous_identity_or_order: "同名项目、重命名或排序无法可靠匹配，请确认此目录的内容"
+};
 function status(message, error = false) { $("status").textContent = message; $("status").dataset.error = String(error); }
 function controls() {
   for (const id of ["download", "validate"]) $(id).disabled = busy || !complete;
@@ -66,6 +75,8 @@ function renderChoices() {
   for (const item of plan.conflicts) {
     const card = document.createElement("section"); card.className = "conflict-choice";
     const legend = document.createElement("div"); legend.className = "conflict-path"; legend.textContent = `${Number(item.id) + 1}. ${item.path.join(" / ")}`; card.append(legend);
+    const reason = document.createElement("p"); reason.className = "conflict-path";
+    reason.textContent = reasonLabels[item.reason] || "请选择要保留的内容"; card.append(reason);
     const sides = document.createElement("div"); sides.className = "sources";
     const inputs = {};
     const state = document.createElement("span");
@@ -120,19 +131,37 @@ async function run(task) {
 async function load() {
   // Reject retired links rather than silently turning a test page into a real operation.
   if (new URLSearchParams(location.search).has("mode")) throw new Error("此测试入口已移除，请从扩展弹窗进入真实冲突解决页。");
-  const fresh = await send("getMergePreview", { provider });
+  const fresh = await send("getMergePreview", { provider, direction });
   validateSnapshot(fresh.local);
   if (fresh.remote) validateSnapshot(fresh.remote);
   preview = fresh;
-  plan = createMergePlan(fresh.local, fresh.remote);
+  if (fresh.base) validateSnapshot(fresh.base);
+  plan = createMergePlan(fresh.local, fresh.remote, fresh.base, fresh.pendingMerge);
+  const projected = fresh.pendingMerge && !plan.pendingOverlap && fresh.remote;
+  $("localDescription").textContent = projected && fresh.pendingMerge.direction === "push"
+    ? "本地书签与此前已确认的合并内容" : "当前浏览器中的书签";
+  $("remoteDescription").textContent = projected && fresh.pendingMerge.direction === "pull"
+    ? "云端书签与此前已确认的合并内容" : "仓库中保存的书签";
   selections = {}; dirty = false;
   $("local").value = json(fresh.local);
   $("remote").value = fresh.remote ? json(fresh.remote) : "远端文件不存在";
   submitted = false;
   $("confirm").checked = false;
   renderChoices();
+  const needsReview = plan.conflicts.length > 0;
+  const title = needsReview ? (plan.hasBase ? "解决书签冲突" : "确认书签差异") : "检查合并结果";
+  document.title = title; document.querySelector("h1").textContent = title;
+  $("mergeReason").textContent = !fresh.remote
+    ? "云端快照文件不存在。请确认是否保留本地内容；这与云端缺少某一条书签不同。"
+    : !needsReview
+      ? "重新读取后没有需要手动选择的冲突。可确定的变更已合并到下方预览，检查后即可提交。"
+      : plan.pendingOverlap
+        ? "上次合并只更新了一侧，尚未同步到另一侧，期间又出现了重叠修改。请确认当前差异，避免恢复已删除的内容。"
+      : !plan.hasBase
+        ? "尚无完整的共同同步历史（首次同步或旧版升级）。单边存在的项目可能是新增，也可能是另一侧删除，需要本次确认。两端内容一致后会自动建立历史基线。"
+        : `${fresh.reason?.summary || `有 ${plan.conflicts.length} 项变更需要确认。`} 已自动处理 ${plan.automatic.length} 组可确定的变更，结果见下方预览。`;
   $("destination").textContent = `${getProviderLabel(provider)} · ${fresh.scope}`;
-  status("请逐项选择要保留的内容，完成后检查合并预览。");
+  status(needsReview ? "请逐项选择要保留的内容，完成后检查合并预览。" : "没有待选择项，请检查合并预览并确认提交。");
 }
 $("reload").addEventListener("click", () => {
   if (dirty && !window.confirm("重新读取将清除当前选择，请先下载已完成的结果。继续？")) return;

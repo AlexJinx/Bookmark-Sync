@@ -47,12 +47,22 @@ export function setScopedSyncState(syncStateStore, nextSyncState) {
   };
 }
 
-export function makeSyncState(config, remoteSha, localHash) {
+export function makeSyncState(config, remoteSha, localHash, baseSnapshot = null) {
   return {
     scope: getSyncScope(config),
     remoteSha: remoteSha || null,
     localHash,
+    baseSnapshot: baseSnapshot ? structuredClone(baseSnapshot) : null,
     updatedAt: new Date().toISOString()
+  };
+}
+
+// Preserve the last common baseline separately from an accepted one-way merge.
+export function makePendingSyncState(config, remoteSha, localHash, local, remote, direction, previousState) {
+  return {
+    ...previousState,
+    scope: getSyncScope(config), remoteSha, updatedAt: new Date().toISOString(),
+    pendingMerge: { direction, localHash, local: structuredClone(local), remote: structuredClone(remote) }
   };
 }
 
@@ -66,5 +76,5 @@ export function hasLocalChanged(syncState, localHash) {
   if (!syncState) {
     return true;
   }
-  return syncState.localHash !== localHash;
+  return (syncState.pendingMerge?.localHash || syncState.localHash) !== localHash;
 }
