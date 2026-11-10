@@ -1,7 +1,7 @@
 import { exportSnapshot, importSnapshot, validateSnapshot } from "../core/bookmarks/service.js";
-import { createProviderClient, PROVIDER_IDS } from "../providers/registry.js";
+import { createProviderClient, assertProviderEnabled, PROVIDER_IDS } from "../providers/registry.js";
 import { getConfig, saveLastSync, getSyncState, saveSyncState } from "../core/storage.js";
-import { isProviderConfigured, getConfiguredProviders } from "../core/config.js";
+import { isProviderConfigured, isProviderEnabled, getEnabledProviders, getSyncProviders, getDefaultSyncProvider } from "../core/config.js";
 import { hashSnapshot, parseSnapshotText } from "../core/snapshot/hash.js";
 import { countSnapshotBookmarks } from "../core/snapshot/count.js";
 import { RemoteStatus } from "../core/actions.js";
@@ -35,6 +35,7 @@ export async function getMergePreview(provider, direction = "push") {
     const config = withProvider(await getConfig(), provider);
     assertKnownConfiguredProvider(config, provider);
     const local = await getLocalSnapshotAndHash();
+    await assertStillEnabled(config);
     const remote = await createProviderClient(config).getRemoteFile();
     const remoteSnapshot = remote.exists ? parseSnapshotText(remote.contentText || "") : null;
     if (remoteSnapshot) validateSnapshot(remoteSnapshot);
@@ -50,6 +51,7 @@ export async function getMergePreview(provider, direction = "push") {
       if (!isConflictError(error)) throw error;
       reason = error.details;
     }
+    await assertStillEnabled(config);
     return {
       provider, scope: getSyncScope(config), local: local.snapshot, remote: remoteSnapshot,
       localHash: local.localHash, remoteSha: remote.sha || null,
@@ -66,6 +68,7 @@ export async function submitMerge({ provider, expected, snapshot, direction = "p
     validateSnapshot(snapshot);
     ensureNoExactDuplicateFolders({ snapshot, operation: direction, side: direction === "pull" ? "local" : "remote" });
     const local = await getLocalSnapshotAndHash();
+    await assertStillEnabled(config);
     const client = createProviderClient(config);
     const remote = await client.getRemoteFile();
     const remoteSnapshot = remote.exists ? parseSnapshotText(remote.contentText || "") : null;
@@ -80,6 +83,7 @@ export async function submitMerge({ provider, expected, snapshot, direction = "p
       local: local.snapshot, remote: remoteSnapshot
     } });
     if (direction === "pull") {
+      await assertStillEnabled(config);
       await importSnapshot(snapshot, { expectedLocalHash: expected.localHash });
       if (remote.exists) {
         const state = normalizeSyncStateStore(await getSyncState());
@@ -94,6 +98,7 @@ export async function submitMerge({ provider, expected, snapshot, direction = "p
       return lastSync;
     }
     // Never retry with a newer SHA: that would overwrite changes not reviewed by the user.
+    await assertStillEnabled(config);
     const result = await client.updateRemoteFile(JSON.stringify(snapshot, null, 2), remote.sha);
     const lastSync = { at: new Date().toISOString(), direction: "push", provider, merged: true,
       fileSha: result.fileSha, commitSha: result.commitSha };
@@ -146,12 +151,22 @@ async function getRemoteSnapshotAndHash(remote) {
 }
 
 function assertKnownConfiguredProvider(config, provider) {
-  if (!PROVIDER_IDS.includes(provider)) {
-    throw new Error(`未知 provider: ${provider}`);
-  }
+  assertProviderEnabled(config, provider);
   if (!isProviderConfigured(config, provider)) {
     throw new Error(`平台未完成配置: ${provider}`);
   }
+}
+
+function requireDefaultProvider(config) {
+  const provider = getDefaultSyncProvider(config);
+  if (provider) return provider;
+  const error = new Error("没有已启用且配置完整的仓库，请先在基本设置中启用并配置至少一个仓库。");
+  error.code = "NO_SYNC_PROVIDER";
+  throw error;
+}
+
+async function assertStillEnabled(config) {
+  assertProviderEnabled(await getConfig(), config.provider);
 }
 
 function ensureNoExactDuplicateFolders({ snapshot, operation, side }) {
@@ -186,6 +201,7 @@ function buildPushResult(config, { fileSha, commitSha = "", localHash, local, sn
 }
 
 async function pushToRemoteForConfig(config, { local, syncStateStore } = {}) {
+  await assertStillEnabled(config);
   const client = createProviderClient(config);
   const localSnapshot = local || (await getLocalSnapshotAndHash());
   const scopedStateStore = syncStateStore || normalizeSyncStateStore(await getSyncState());
@@ -239,6 +255,7 @@ async function pushToRemoteForConfig(config, { local, syncStateStore } = {}) {
   };
 
   try {
+    await assertStillEnabled(config);
     const result = await client.updateRemoteFile(payload, remote.sha);
     return await finalizePushResult(result);
   } catch (error) {
@@ -247,6 +264,7 @@ async function pushToRemoteForConfig(config, { local, syncStateStore } = {}) {
     }
 
     // Contents API 提交竞态：远端在 GET 与 PUT 之间被更新（409）。
+    await assertStillEnabled(config);
     const latestRemote = await client.getRemoteFile();
     if (!latestRemote.exists) {
       throwConflictError("检测到冲突：远端文件在推送过程中被删除。", {
@@ -287,17 +305,17 @@ function buildMultiProviderLastSync(results) {
 export async function pushToRemote({ provider = "", syncAllProviders = null } = {}) {
   return syncOperations.run("pushToRemote", () => withSyncRun(async () => {
     const config = await getConfig();
+    const selectedProvider = typeof provider === "string" ? provider.trim() : "";
+    const targetProvider = selectedProvider || requireDefaultProvider(config);
+    assertKnownConfiguredProvider(config, targetProvider);
     const [local, rawSyncState] = await Promise.all([getLocalSnapshotAndHash(), getSyncState()]);
     ensureNoExactDuplicateFolders({ snapshot: local.snapshot, operation: "push", side: "local" });
     const syncStateStore = normalizeSyncStateStore(rawSyncState);
-    const selectedProvider = typeof provider === "string" ? provider.trim() : "";
     const hasSyncAllOverride = typeof syncAllProviders === "boolean";
     const shouldSyncAllProviders = hasSyncAllOverride ? syncAllProviders : Boolean(config.syncAllProviders);
 
     if (selectedProvider) {
-      assertKnownConfiguredProvider(config, selectedProvider);
-
-      const result = await pushToRemoteForConfig(withProvider(config, selectedProvider), { local, syncStateStore });
+      const result = await pushToRemoteForConfig(withProvider(config, targetProvider), { local, syncStateStore });
       const nextSyncStateStore = setScopedSyncState(syncStateStore, result.nextSyncState);
       await saveSyncState(nextSyncStateStore);
       await saveLastSync(result.lastSync);
@@ -305,17 +323,14 @@ export async function pushToRemote({ provider = "", syncAllProviders = null } = 
     }
 
     if (!shouldSyncAllProviders) {
-      const result = await pushToRemoteForConfig(config, { local, syncStateStore });
+      const result = await pushToRemoteForConfig(withProvider(config, targetProvider), { local, syncStateStore });
       const nextSyncStateStore = setScopedSyncState(syncStateStore, result.nextSyncState);
       await saveSyncState(nextSyncStateStore);
       await saveLastSync(result.lastSync);
       return result.lastSync;
     }
 
-    const providers = getConfiguredProviders(config);
-    if (providers.length === 0) {
-      throw new Error("未找到已配置的平台，请先在设置中完善至少一个平台配置");
-    }
+    const providers = getSyncProviders(config);
 
     const settled = await Promise.allSettled(
       providers.map((item) => pushToRemoteForConfig(withProvider(config, item), { local, syncStateStore }))
@@ -381,12 +396,9 @@ export async function pullFromRemote({ provider = "" } = {}) {
   return syncOperations.run("pullFromRemote", () => withSyncRun(async () => {
     const config = await getConfig();
     const selectedProvider = typeof provider === "string" ? provider.trim() : "";
-    let workingConfig = config;
-
-    if (selectedProvider) {
-      assertKnownConfiguredProvider(config, selectedProvider);
-      workingConfig = withProvider(config, selectedProvider);
-    }
+    const targetProvider = selectedProvider || requireDefaultProvider(config);
+    assertKnownConfiguredProvider(config, targetProvider);
+    const workingConfig = withProvider(config, targetProvider);
 
     const client = createProviderClient(workingConfig);
 
@@ -415,6 +427,7 @@ export async function pullFromRemote({ provider = "" } = {}) {
         at: new Date().toISOString(), provider: workingConfig.provider, direction: "pull", scope: getSyncScope(workingConfig),
         local: local.snapshot, remote: remoteSnapshot
       } });
+      await assertStillEnabled(workingConfig);
       await importSnapshot(snapshot, { expectedLocalHash: local.localHash });
     }
 
@@ -495,15 +508,15 @@ async function getRemoteBookmarkCount(config, provider) {
 }
 
 export async function getBookmarkCounts() {
-  const [config, localSnapshot] = await Promise.all([
-    getConfig(),
-    syncOperations.run("readLocalBookmarkCounts", () => exportSnapshot())
-  ]);
+  // The local read may wait behind a sync. Use repository switches as they stand
+  // when that wait ends, rather than starting remote reads from an old config.
+  const localSnapshot = await syncOperations.run("readLocalBookmarkCounts", () => exportSnapshot());
+  const config = await getConfig();
   const localBookmarks = countSnapshotBookmarks(localSnapshot);
   const localDuplicates = summarizeExactDuplicateFolders(localSnapshot);
 
   const remotes = {};
-  const results = await Promise.all(PROVIDER_IDS.map((provider) => getRemoteBookmarkCount(config, provider)));
+  const results = await Promise.all(getEnabledProviders(config).map((provider) => getRemoteBookmarkCount(config, provider)));
   for (const item of results) {
     remotes[item.provider] = item;
   }
@@ -519,7 +532,7 @@ export async function getBookmarkCounts() {
 
 export async function checkRemoteAhead() {
   const config = await getConfig();
-  const providers = getConfiguredProviders(config);
+  const providers = getSyncProviders(config);
   if (providers.length === 0) {
     return null;
   }
@@ -536,6 +549,7 @@ export async function checkRemoteAhead() {
         continue;
       }
 
+      if (!isProviderEnabled(await getConfig(), provider)) continue;
       const client = createProviderClient(workingConfig);
       const remote = await client.getRemoteFile();
       if (!remote.exists) {

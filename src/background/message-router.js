@@ -4,10 +4,11 @@ import { getConfig, saveConfig, getLastSync, getClearBackup, saveClearBackup } f
 import { exportSnapshot, importSnapshot, clearAllBookmarks } from "../core/bookmarks/service.js";
 import { countSnapshotBookmarks } from "../core/snapshot/count.js";
 import { createProviderClient } from "../providers/registry.js";
+import { getSyncTargets } from "../core/config.js";
 import { pushToRemote, pullFromRemote, getBookmarkCounts, getMergePreview, submitMerge } from "./sync-engine.js";
-import { scheduleAutoSync } from "./scheduler.js";
+import { scheduleAutoSync, CHANGE_DEBOUNCE_ALARM } from "./scheduler.js";
 import { acknowledgeBadge, clearPendingBadge, BadgeState } from "./badge.js";
-import { hasPendingChangePush } from "./triggers.js";
+import { hasPendingChangePush, clearPendingChangePush } from "./triggers.js";
 import { emit, Events } from "./events.js";
 
 const handlers = {
@@ -20,6 +21,11 @@ const handlers = {
   [Actions.SAVE_CONFIG]: async (message) => {
     const saved = await saveConfig(message.config || {});
     await scheduleAutoSync(saved);
+    if (!saved.changeSync?.enabled || getSyncTargets(saved).length === 0) {
+      await chrome.alarms.clear(CHANGE_DEBOUNCE_ALARM);
+      await clearPendingChangePush();
+      await clearPendingBadge();
+    }
     return saved;
   },
 

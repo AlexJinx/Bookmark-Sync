@@ -1,5 +1,6 @@
 const fields = {
   provider: document.getElementById("provider"),
+  providerEnabled: document.getElementById("providerEnabled"),
   theme: document.getElementById("theme"),
   skin: document.getElementById("skin"),
   token: document.getElementById("token"),
@@ -14,6 +15,8 @@ const fields = {
 
 import { CONFIG_EXPORT_TYPE, createConfigExportPayload } from "../../config-export.js";
 import { applyProviderDrafts } from "../../config-drafts.js";
+import { isProviderConfigured, isProviderEnabled, getEnabledProviders, getSyncProviders, getDefaultSyncProvider } from "../../core/config.js";
+import { getVisibleLastSync } from "../shared/provider-view.js";
 import { createAppearanceSaver } from "../shared/appearance-save.js";
 import { APPEARANCE_SETTINGS_ENABLED, effectiveAppearance } from "../shared/appearance-policy.js";
 
@@ -34,7 +37,11 @@ async function autoSaveAppearance() {
 }
 
 const providerUi = {
-  tabs: Array.from(document.querySelectorAll(".platform-tab"))
+  tabs: Array.from(document.querySelectorAll("#page-settings .platform-tab"))
+};
+
+const timelineUi = {
+  tabs: Array.from(document.querySelectorAll("#page-timeline .platform-tab"))
 };
 
 const THEME_CHOICES = ["light", "dark", "auto"];
@@ -317,6 +324,9 @@ function setActionBusy(busy) {
       element.disabled = Boolean(busy);
     }
   }
+  for (const tab of providerUi.tabs) tab.disabled = Boolean(busy);
+  fields.providerEnabled.disabled = Boolean(busy);
+  document.getElementById("testBtn").disabled = Boolean(busy) || !fields.providerEnabled.checked;
 }
 
 function formatTime(iso) {
@@ -358,10 +368,6 @@ async function sendMessage(action, extra = {}) {
   return response.data;
 }
 
-function getProviderScopedConfig(config) {
-  return config[config.provider] || {};
-}
-
 function getProviderLabel(value) {
   return PROVIDER_LABELS[value] || value;
 }
@@ -397,6 +403,7 @@ function normalizeTokenInput(value) {
 
 function readScopedInputs() {
   return {
+    enabled: fields.providerEnabled.checked,
     token: normalizeTokenInput(fields.token.value),
     owner: fields.owner.value.trim(),
     repo: fields.repo.value.trim(),
@@ -425,6 +432,7 @@ function buildNextConfig(currentConfig) {
 function normalizeScopedConfig(rawScoped, fallbackScoped = {}) {
   const scoped = rawScoped && typeof rawScoped === "object" && !Array.isArray(rawScoped) ? rawScoped : {};
   return {
+    enabled: toBoolean(scoped.enabled, fallbackScoped.enabled !== false),
     token: toTrimmedString(scoped.token, fallbackScoped.token || ""),
     owner: toTrimmedString(scoped.owner, fallbackScoped.owner || ""),
     repo: toTrimmedString(scoped.repo, fallbackScoped.repo || ""),
@@ -496,6 +504,10 @@ function syncProviderUi() {
   const current = fields.provider.value;
   for (const tab of providerUi.tabs) {
     const selected = tab.dataset.provider === current;
+    const enabled = selected
+      ? fields.providerEnabled.checked
+      : (scopedDrafts[tab.dataset.provider] || overviewState.config?.[tab.dataset.provider])?.enabled !== false;
+    tab.textContent = `${getProviderLabel(tab.dataset.provider)}${enabled ? "" : " · 已禁用"}`;
     tab.setAttribute("aria-pressed", String(selected));
     tab.classList.toggle("active", selected);
   }
@@ -546,27 +558,46 @@ function toggleTokenVisibility() {
 
 function render(config) {
   const provider = config.provider || "github";
-  setProviderValue(provider);
   fields.theme.value = config.theme || "auto";
   applySkinChoice(config.skin || "default");
+  fields.autoSyncEnabled.checked = Boolean(config.autoSyncEnabled);
+  fields.autoSyncIntervalMinutes.value = String(normalizeIntervalMinutes(config.autoSyncIntervalMinutes));
+  renderScoped(config, provider);
+}
 
-  const persisted = getProviderScopedConfig(config);
+function renderScoped(config, provider) {
+  const persisted = config[provider] || {};
   const draft = scopedDrafts[provider] || {};
   const scoped = {
     ...persisted,
     ...draft
   };
 
+  fields.providerEnabled.checked = scoped.enabled !== false;
+  setProviderValue(provider);
+  refreshProviderEnabledUi();
   fields.token.value = scoped.token || "";
   fields.owner.value = scoped.owner || "";
   fields.repo.value = scoped.repo || "";
   fields.branch.value = scoped.branch || "";
   fields.path.value = scoped.path || "";
-  fields.autoSyncEnabled.checked = Boolean(config.autoSyncEnabled);
-  fields.autoSyncIntervalMinutes.value = String(normalizeIntervalMinutes(config.autoSyncIntervalMinutes));
   setTokenVisibility(false);
 
   activeProvider = provider;
+}
+
+function refreshProviderEnabledUi() {
+  const label = getProviderLabel(fields.provider.value);
+  const enabled = fields.providerEnabled.checked;
+  document.getElementById("providerEnabledControl").dataset.enabled = String(enabled);
+  document.getElementById("providerEnabledState").textContent = enabled ? "已启用" : "已禁用";
+  document.getElementById("providerEnabledNote").textContent = enabled
+    ? "参与推送、拉取和自动同步，保存后生效。"
+    : "暂停同步并保留 Token 和仓库配置，保存后生效。";
+  document.getElementById("providerEnabledLabel").textContent = `启用 ${label} 仓库`;
+  document.getElementById("testBtn").disabled = isRunning || !fields.providerEnabled.checked;
+  document.getElementById("testBtn").title = fields.providerEnabled.checked ? "" : "请先启用该仓库再测试连接";
+  syncProviderUi();
 }
 
 const PAGE_LABELS = {
@@ -587,6 +618,7 @@ const timelineState = {
   hasNext: false,
   commits: [],
   provider: "",
+  configKey: "",
   selectedSha: "",
   loading: false
 };
@@ -626,11 +658,6 @@ function bindNavigation() {
   });
 }
 
-function isProviderConfigured(config, provider) {
-  const scoped = (config && config[provider]) || {};
-  return Boolean(scoped.token && scoped.owner && scoped.repo);
-}
-
 function describeRepo(scoped) {
   if (!scoped.owner || !scoped.repo) {
     return "尚未配置";
@@ -656,20 +683,20 @@ function setHeroPill(text, tone) {
 }
 
 function renderLastSync() {
-  const lastSync = overviewState.lastSync;
+  const lastSync = getVisibleLastSync(overviewState.config, overviewState.lastSync);
   const label = document.getElementById("lastSync");
   const note = document.getElementById("lastSyncNote");
   const meta = document.getElementById("lastSyncMeta");
 
   if (!lastSync) {
     if (label) label.textContent = "最近同步: 无";
-    if (note) note.textContent = "还没有同步记录，先在弹窗里执行一次推送。";
+    if (note) note.textContent = "当前启用的仓库暂无同步记录。";
     if (meta) meta.textContent = "—";
     return;
   }
 
   const directionLabel = lastSync.direction === "pull" ? "拉取" : "推送";
-  const providerLabel = lastSync.provider ? getProviderLabel(lastSync.provider) : "全部平台";
+  const providerLabel = lastSync.providers.map(getProviderLabel).join("、");
 
   if (label) label.textContent = `最近同步: ${formatTime(lastSync.at)}`;
   if (note) {
@@ -690,21 +717,30 @@ function renderOverview() {
 
   const github = config.github || {};
   const gitee = config.gitee || {};
-  const githubReady = isProviderConfigured(config, "github");
-  const giteeReady = isProviderConfigured(config, "gitee");
-  const readyCount = Number(githubReady) + Number(giteeReady);
+  const enabled = getEnabledProviders(config);
+  const readyCount = getSyncProviders(config).length;
+  const githubReady = isProviderConfigured(config, "github") && isProviderEnabled(config, "github");
+  const giteeReady = isProviderConfigured(config, "gitee") && isProviderEnabled(config, "gitee");
+  for (const element of document.querySelectorAll("[data-repository]")) {
+    element.classList.toggle("hidden", !enabled.includes(element.dataset.repository));
+  }
+  document.getElementById("enabledProviderCount").textContent = String(enabled.length).padStart(2, "0");
+  document.getElementById("noEnabledRepositories").classList.toggle("hidden", enabled.length > 0);
+  syncTimelineProviders(config);
 
   const badge = document.getElementById("connectionBadge");
   if (badge) {
-    badge.textContent = readyCount ? `${readyCount} 个平台已配置` : "尚未配置仓库";
+    badge.textContent = readyCount ? `${readyCount} 个仓库可同步` : enabled.length ? "尚未配置仓库" : "仓库已全部禁用";
   }
 
-  setHeroPill(readyCount ? "同步就绪" : "等待配置", readyCount ? "green" : "warn");
+  setHeroPill(readyCount ? "同步就绪" : enabled.length ? "等待配置" : "同步已暂停", readyCount ? "green" : "warn");
   const heroNote = document.getElementById("heroNote");
   if (heroNote) {
     heroNote.textContent = readyCount
-      ? `默认平台为 ${getProviderLabel(config.provider || "github")}，当前 ${readyCount} 个平台已完成配置。`
-      : "先在连接配置里填写仓库信息，之后在弹窗中执行推送与拉取。";
+      ? `默认平台为 ${getProviderLabel(getDefaultSyncProvider(config))}，当前 ${readyCount} 个仓库已启用且配置完整。`
+      : enabled.length
+        ? "先在基本设置里填写已启用仓库的信息，之后在弹窗中执行推送与拉取。"
+        : "仓库已全部禁用，配置仍然保留。在基本设置中重新启用后即可继续同步。";
   }
 
   const githubLine = document.getElementById("githubRepoLine");
@@ -717,15 +753,17 @@ function renderOverview() {
   const autoMetric = document.getElementById("metricAuto");
   if (autoMetric) {
     autoMetric.textContent = config.autoSyncEnabled
-      ? `${normalizeIntervalMinutes(config.autoSyncIntervalMinutes)} 分钟`
+      ? readyCount ? `${normalizeIntervalMinutes(config.autoSyncIntervalMinutes)} 分钟` : "已暂停"
       : "已关闭";
-    autoMetric.classList.toggle("is-empty", !config.autoSyncEnabled);
+    autoMetric.classList.toggle("is-empty", !config.autoSyncEnabled || !readyCount);
   }
 
   const autoNote = document.getElementById("autoNote");
   if (autoNote) {
     autoNote.textContent = config.autoSyncEnabled
-      ? `自动推送已开启，每 ${normalizeIntervalMinutes(config.autoSyncIntervalMinutes)} 分钟一次。`
+      ? readyCount
+        ? `仅向已启用的同步目标自动推送，每 ${normalizeIntervalMinutes(config.autoSyncIntervalMinutes)} 分钟一次。`
+        : "自动推送已暂停：请先启用并配置至少一个仓库。"
       : "自动推送尚未开启，只在你手动操作时同步。";
   }
 
@@ -793,9 +831,9 @@ async function load() {
   const [config, lastSync] = await Promise.all([sendMessage("getConfig"), sendMessage("getLastSync")]);
   scopedDrafts.github = null;
   scopedDrafts.gitee = null;
-  render(config);
   overviewState.config = config;
   overviewState.lastSync = lastSync || null;
+  render(config);
   renderOverview();
   markClean();
 }
@@ -804,13 +842,15 @@ async function save() {
   await appearanceSaver.flush();
   const current = await sendMessage("getConfig");
   const nextConfig = buildNextConfig(current);
-  await sendMessage("saveConfig", { config: nextConfig });
+  const saved = await sendMessage("saveConfig", { config: nextConfig });
 
   for (const key of PROVIDER_KEYS) {
     scopedDrafts[key] = null;
   }
-  overviewState.config = nextConfig;
+  overviewState.config = saved;
+  renderScoped(saved, activeProvider);
   renderOverview();
+  void loadCounts();
   setStatus("设置已保存");
   markClean();
 }
@@ -818,7 +858,7 @@ async function save() {
 async function testConnection() {
   const current = await sendMessage("getConfig");
   const nextConfig = buildNextConfig(current);
-  const result = await sendMessage("testConnection", { config: nextConfig });
+  const result = await sendMessage("testConnection", { config: { ...nextConfig, provider: fields.provider.value } });
   setStatus(`连接成功: ${result.fullName} (默认分支: ${result.defaultBranch})`);
 }
 
@@ -895,8 +935,8 @@ async function importConfigFile(event) {
 
   scopedDrafts.github = null;
   scopedDrafts.gitee = null;
-  render(saved);
   overviewState.config = saved;
+  render(saved);
   renderOverview();
   void loadCounts();
   setStatus("配置导入并保存完成。");
@@ -907,19 +947,7 @@ async function switchProvider() {
   scopedDrafts[activeProvider] = readScopedInputs();
 
   const current = await sendMessage("getConfig");
-  if (current.provider !== fields.provider.value) {
-    const saved = await sendMessage("saveConfig", { config: { ...current, provider: fields.provider.value } });
-    overviewState.config = saved;
-    render(saved);
-    renderOverview();
-  } else {
-    render(current);
-  }
-
-  resetTimeline();
-  if (document.getElementById("page-timeline")?.classList.contains("active")) {
-    void loadTimeline();
-  }
+  renderScoped(current, fields.provider.value);
 }
 
 function bindEvents() {
@@ -938,6 +966,10 @@ function bindEvents() {
   document.getElementById("importConfigBtn").addEventListener("click", importConfigClick);
   document.getElementById("importConfigInput").addEventListener("change", (event) => run(() => importConfigFile(event)));
   fields.provider.addEventListener("change", () => run(switchProvider));
+  fields.providerEnabled.addEventListener("change", () => {
+    refreshProviderEnabledUi();
+    markDirty();
+  });
 
   const dirtyInputs = [fields.token, fields.owner, fields.repo, fields.branch, fields.path];
   for (const input of dirtyInputs) {
@@ -1379,6 +1411,32 @@ function resetTimeline() {
   renderTimelinePagination();
 }
 
+function syncTimelineProviders(config) {
+  const providers = getEnabledProviders(config);
+  const provider = providers.includes(timelineState.provider)
+    ? timelineState.provider
+    : providers.includes(config.provider) ? config.provider : providers[0] || "";
+  const configKey = JSON.stringify(providers.map((id) => [id, config[id]]));
+  const changed = timelineState.provider !== provider || timelineState.configKey !== configKey;
+  if (changed) {
+    resetTimeline();
+    timelineState.provider = provider;
+    timelineState.configKey = configKey;
+    setTimelineState("empty", provider ? "尚未读取提交历史" : "仓库已全部禁用",
+      provider ? "打开时光胶囊或点击刷新记录，查看已启用仓库的提交。" : "请在基本设置中启用需要查看的仓库，原有配置会保留。");
+  }
+  for (const tab of timelineUi.tabs) {
+    const selected = tab.dataset.provider === provider;
+    tab.classList.toggle("hidden", !providers.includes(tab.dataset.provider));
+    tab.classList.toggle("active", selected);
+    tab.setAttribute("aria-pressed", String(selected));
+  }
+  document.getElementById("timelineRefreshBtn").disabled = !provider;
+  if (changed && document.getElementById("page-timeline").classList.contains("active")) {
+    void loadTimeline();
+  }
+}
+
 function renderTimelinePagination() {
   document.getElementById("timelinePrev").disabled = timelineState.loading || timelineState.page <= 1;
   document.getElementById("timelineNext").disabled = timelineState.loading || !timelineState.hasNext;
@@ -1391,7 +1449,15 @@ async function loadTimeline() {
   timelineState.selectedSha = "";
   renderCommitDetail(null);
 
-  const provider = fields.provider.value || "github";
+  const provider = timelineState.provider;
+  if (!provider || !isProviderEnabled(overviewState.config, provider)) {
+    timelineState.loading = false;
+    timelineState.commits = [];
+    timelineState.hasNext = false;
+    renderTimelinePagination();
+    setTimelineState("empty", "仓库已全部禁用", "请在基本设置中启用需要查看的仓库，原有配置会保留。");
+    return;
+  }
 
   timelineState.loading = true;
   timelineState.hasNext = false;
@@ -1422,6 +1488,16 @@ async function loadTimeline() {
 }
 
 function bindTimeline() {
+  for (const tab of timelineUi.tabs) {
+    tab.addEventListener("click", () => {
+      const provider = tab.dataset.provider;
+      if (!isProviderEnabled(overviewState.config, provider) || timelineState.provider === provider) return;
+      resetTimeline();
+      timelineState.provider = provider;
+      syncTimelineProviders(overviewState.config);
+      void loadTimeline();
+    });
+  }
   document.getElementById("timelinePrev").addEventListener("click", () => {
     if (timelineState.loading || timelineState.page <= 1) return;
     timelineState.page -= 1;
@@ -1473,6 +1549,19 @@ async function init() {
   bindNavigation();
   bindTimeline();
   renderVersion();
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    const config = changes.syncConfig?.newValue;
+    if (areaName !== "local" || !config) return;
+    const repositoriesChanged = PROVIDER_KEYS.some((id) => JSON.stringify(overviewState.config?.[id]) !== JSON.stringify(config[id]));
+    overviewState.config = config;
+    if (!isRunning && !hasUnsavedChanges) {
+      const provider = activeProvider;
+      render(config);
+      renderScoped(config, provider);
+    }
+    renderOverview();
+    if (repositoriesChanged) void loadCounts();
+  });
   await run(load);
   showPage(location.hash.slice(1) || "dashboard");
   void loadCounts();

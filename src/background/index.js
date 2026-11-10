@@ -3,6 +3,7 @@
 // 都会在 SW 冷启动时错过事件）。处理逻辑内部可以异步。
 import { getConfig, saveConfig } from "../core/storage.js";
 import { getProviderLabel } from "../providers/registry.js";
+import { getSyncTargets } from "../core/config.js";
 import { handleMessage } from "./message-router.js";
 import { pushToRemote, checkRemoteAhead, isSyncRunning } from "./sync-engine.js";
 import { isConflictError } from "./conflict.js";
@@ -24,10 +25,12 @@ const NOTIFY_TITLE = "书签同步";
 
 async function runAutoPush() {
   try {
+    if (getSyncTargets(await getConfig()).length === 0) return "skipped";
     const result = await pushToRemote();
     await emit(Events.AUTO_SYNC_SUCCESS, { result });
     return "success";
   } catch (error) {
+    if (error.code === "NO_SYNC_PROVIDER" || error.code === "PROVIDER_DISABLED") return "skipped";
     if (isConflictError(error)) {
       console.warn("auto sync skipped due to conflict", error.details || error.message);
       await emit(Events.AUTO_SYNC_CONFLICT, { error });
@@ -49,7 +52,7 @@ async function runChangePush() {
   }
 
   const config = await getConfig();
-  if (!config.changeSync?.enabled) {
+  if (!config.changeSync?.enabled || getSyncTargets(config).length === 0) {
     await clearPendingChangePush();
     // 变更同步已被关闭：残留的"待推送"徽章一并清掉，否则会永远挂着。
     await clearPendingBadge();

@@ -855,7 +855,7 @@ h4 {
 /* ---------- 指标卡 ---------- */
 .metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 14px;
   margin: 18px 0;
 }
@@ -1043,6 +1043,147 @@ h4 {
   font-size: 12px;
   font-weight: 620;
   color: #4b5165;
+}
+
+.repository-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 15px 18px;
+  margin-bottom: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  transition: border-color 180ms ease;
+}
+
+.repository-toggle[data-enabled="true"] {
+  border-color: var(--accent-soft);
+}
+
+.repository-toggle-copy {
+  min-width: 0;
+}
+
+.repository-toggle-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+}
+
+.repository-toggle-title {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.repository-toggle-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: var(--line);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.repository-toggle-state::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.repository-toggle[data-enabled="true"] .repository-toggle-state {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.repository-toggle-note {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 400;
+  line-height: 1.7;
+}
+
+label.repository-switch {
+  position: relative;
+  display: flex;
+  flex: 0 0 44px;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.repository-switch input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.repository-switch-track {
+  position: relative;
+  display: block;
+  width: 44px;
+  height: 26px;
+  border-radius: 999px;
+  background: #cdd0dd;
+  pointer-events: none;
+  transition: background-color 180ms ease, box-shadow 180ms ease;
+}
+
+.repository-switch-track::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(30, 34, 51, 0.18);
+  transition: transform 180ms ease;
+}
+
+.repository-switch input:checked + .repository-switch-track {
+  background: var(--accent);
+}
+
+.repository-switch input:checked + .repository-switch-track::before {
+  transform: translateX(18px);
+}
+
+.repository-switch:hover input:checked:not(:disabled) + .repository-switch-track {
+  background: var(--accent-deep);
+}
+
+.repository-switch input:focus-visible + .repository-switch-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.repository-switch input:disabled {
+  cursor: not-allowed;
+}
+
+.repository-switch input:disabled + .repository-switch-track {
+  opacity: 0.5;
 }
 
 .platform-tabs {

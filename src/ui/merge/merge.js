@@ -3,6 +3,7 @@ import { validateSnapshot } from "../../core/bookmarks/service.js";
 import { countSnapshotBookmarks } from "../../core/snapshot/count.js";
 import { getProviderLabel } from "../../providers/registry.js";
 import { createMergePlan } from "../../core/snapshot/merge-plan.js";
+import { isProviderEnabled } from "../../core/config.js";
 
 const $ = id => document.getElementById(id);
 const provider = new URLSearchParams(location.search).get("provider") || "";
@@ -21,6 +22,8 @@ let submitted = false;
 let plan = null;
 let selections = {};
 let complete = false;
+let repositoryEnabled = true;
+let requiresReload = false;
 const json = value => JSON.stringify(value, null, 2);
 const reasonLabels = {
   ambiguous_move: "书签位置发生变化且双方都有修改，请确认此目录内容",
@@ -34,9 +37,9 @@ const reasonLabels = {
 function status(message, error = false) { $("status").textContent = message; $("status").dataset.error = String(error); }
 function controls() {
   for (const id of ["download", "validate"]) $(id).disabled = busy || !complete;
-  for (const input of document.querySelectorAll('#conflicts input, #conflicts button')) input.disabled = busy || submitted;
-  $("reload").disabled = busy;
-  $("submit").disabled = busy || !complete || submitted || !$("confirm").checked;
+  for (const input of document.querySelectorAll('#conflicts input, #conflicts button')) input.disabled = busy || submitted || !repositoryEnabled;
+  $("reload").disabled = busy || !repositoryEnabled;
+  $("submit").disabled = busy || !complete || submitted || !repositoryEnabled || requiresReload || !$("confirm").checked;
 }
 function tree(nodes, parent) {
   const list = document.createElement("ul");
@@ -125,13 +128,21 @@ function parseResult() {
 async function run(task) {
   if (busy) return;
   busy = true; controls();
-  try { await task(); } catch (error) { status(error.message || String(error), true); }
+  try { await task(); } catch (error) {
+    if (error.code === "PROVIDER_DISABLED") {
+      repositoryEnabled = false;
+      requiresReload = true;
+    }
+    status(error.message || String(error), true);
+  }
   finally { busy = false; controls(); }
 }
 async function load() {
   // Reject retired links rather than silently turning a test page into a real operation.
   if (new URLSearchParams(location.search).has("mode")) throw new Error("此测试入口已移除，请从扩展弹窗进入真实冲突解决页。");
   const fresh = await send("getMergePreview", { provider, direction });
+  repositoryEnabled = true;
+  requiresReload = false;
   validateSnapshot(fresh.local);
   if (fresh.remote) validateSnapshot(fresh.remote);
   preview = fresh;
@@ -175,7 +186,7 @@ $("download").addEventListener("click", () => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 $("submit").addEventListener("click", () => run(async () => {
-  if (!$("confirm").checked || submitted) return;
+  if (!$("confirm").checked || submitted || !repositoryEnabled || requiresReload) return;
   const snapshot = parseResult();
   await send("submitMerge", { provider, direction, snapshot, expected: {
     scope: preview.scope, localHash: preview.localHash, remoteSha: preview.remoteSha, remoteHash: preview.remoteHash
@@ -184,4 +195,16 @@ $("submit").addEventListener("click", () => run(async () => {
   status(direction === "pull" ? "合并结果已应用到本地书签，云端未修改。应用前备份保存在扩展本地存储 lastMergeBackup。" : "合并结果已提交到当前云端。本地书签未修改；其他平台未提交。提交前备份保存在扩展本地存储 lastMergeBackup。");
 }));
 window.addEventListener("beforeunload", event => { if (dirty) { event.preventDefault(); event.returnValue = ""; } });
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local" || !changes.syncConfig?.newValue) return;
+  const enabled = isProviderEnabled(changes.syncConfig.newValue, provider);
+  if (enabled === repositoryEnabled) return;
+  repositoryEnabled = enabled;
+  requiresReload = true;
+  $("confirm").checked = false;
+  status(enabled
+    ? "仓库已重新启用，请重新读取两侧数据后再提交。当前草稿仍可下载。"
+    : "该仓库已禁用，已停止读取和提交。当前草稿仍可下载；请在基本设置中重新启用仓库后继续。", !enabled);
+  controls();
+});
 run(load);

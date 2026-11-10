@@ -86,13 +86,13 @@
                 <strong>本地</strong>
                 <small>书签</small>
               </span>
-              <span class="map-line line-github"><i></i><i></i><i></i></span>
-              <span class="map-line line-gitee"><i></i><i></i><i></i></span>
-              <span class="map-node map-github">
+              <span class="map-line line-github" data-repository="github"><i></i><i></i><i></i></span>
+              <span class="map-line line-gitee" data-repository="gitee"><i></i><i></i><i></i></span>
+              <span class="map-node map-github" data-repository="github">
                 <span class="node-icon">GH</span>
                 <span><span class="node-label">云端</span><strong>GitHub</strong></span>
               </span>
-              <span class="map-node map-gitee">
+              <span class="map-node map-gitee" data-repository="gitee">
                 <span class="node-icon">GE</span>
                 <span><span class="node-label">云端</span><strong>Gitee</strong></span>
               </span>
@@ -105,12 +105,12 @@
               <div id="metricLocal">--</div>
               <p>当前浏览器书签总数</p>
             </article>
-            <article>
+            <article data-repository="github">
               <span>GitHub 云端 <i>◫</i></span>
               <div id="metricGithub">--</div>
               <p id="metricGithubNote">读取云端快照</p>
             </article>
-            <article>
+            <article data-repository="gitee">
               <span>Gitee 云端 <i>◫</i></span>
               <div id="metricGitee">--</div>
               <p id="metricGiteeNote">读取云端快照</p>
@@ -126,11 +126,11 @@
             <section class="card">
               <div class="section-heading">
                 <div>
-                  <h3>存储方式 <span class="subtle">02</span></h3>
+                  <h3>存储方式 <span id="enabledProviderCount" class="subtle">02</span></h3>
                   <p>书签以 JSON 快照写入你指定的仓库文件。</p>
                 </div>
               </div>
-              <article class="row">
+              <article class="row" data-repository="github">
                 <span class="row-icon purple">GH</span>
                 <div class="row-copy">
                   <h4>GitHub</h4>
@@ -138,7 +138,7 @@
                 </div>
                 <span id="githubStatusPill" class="pill neutral">未配置</span>
               </article>
-              <article class="row">
+              <article class="row" data-repository="gitee">
                 <span class="row-icon mint">GE</span>
                 <div class="row-copy">
                   <h4>Gitee</h4>
@@ -146,6 +146,7 @@
                 </div>
                 <span id="giteeStatusPill" class="pill neutral">未配置</span>
               </article>
+              <p id="noEnabledRepositories" class="side-note hidden">尚未启用仓库。请在基本设置中启用需要同步的仓库，已保存的配置会保留。</p>
               <div class="storage-facts">
                 <span><small>快照格式</small><b>JSON · 树状结构</b></span>
                 <span><small>写入方式</small><b>整文件覆盖</b></span>
@@ -223,12 +224,27 @@
           <div class="split">
             <section class="card">
               <div class="field-provider">
-                <span class="field-label">同步提供方</span>
+                <span class="field-label">仓库配置</span>
                 <input id="provider" type="hidden" value="github" />
-                <div class="platform-tabs" role="group" aria-label="同步提供方">
+                <div class="platform-tabs" role="group" aria-label="选择要管理的仓库">
                   <button type="button" class="platform-tab" data-provider="github" aria-pressed="true">GitHub</button>
                   <button type="button" class="platform-tab" data-provider="gitee" aria-pressed="false">Gitee</button>
                 </div>
+              </div>
+
+              <div id="providerEnabledControl" class="repository-toggle" data-enabled="true">
+                <div class="repository-toggle-copy">
+                  <div class="repository-toggle-heading">
+                    <span class="repository-toggle-title">仓库同步</span>
+                    <span id="providerEnabledState" class="repository-toggle-state" aria-hidden="true">已启用</span>
+                  </div>
+                  <p id="providerEnabledNote" class="repository-toggle-note">参与推送、拉取和自动同步，保存后生效。</p>
+                </div>
+                <label class="repository-switch">
+                  <input id="providerEnabled" type="checkbox" role="switch" checked aria-labelledby="providerEnabledLabel" aria-describedby="providerEnabledNote" />
+                  <span class="repository-switch-track" aria-hidden="true"></span>
+                  <span id="providerEnabledLabel" class="visually-hidden">启用 GitHub 仓库</span>
+                </label>
               </div>
 
               <label class="token-field">
@@ -293,7 +309,7 @@
             <div class="section-heading">
               <div>
                 <h3>自动推送</h3>
-                <p>只做推送，不会自动拉取，也不会在冲突时强制覆盖。</p>
+                <p>仅推送到已启用且配置完整的仓库。全部禁用时暂停自动推送。</p>
               </div>
               <label class="switch">
                 <input id="autoSyncEnabled" type="checkbox" />

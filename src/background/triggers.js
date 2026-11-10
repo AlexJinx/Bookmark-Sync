@@ -1,6 +1,6 @@
 import { isSelfMutating } from "../core/bookmarks/service.js";
 import { getConfig } from "../core/storage.js";
-import { normalizeDebounceSeconds } from "../core/config.js";
+import { normalizeDebounceSeconds, getSyncTargets } from "../core/config.js";
 import { CHANGE_DEBOUNCE_ALARM } from "./scheduler.js";
 import { emit, Events } from "./events.js";
 
@@ -25,7 +25,7 @@ async function markDirty() {
   }
 
   const config = await getConfig();
-  if (!config.changeSync?.enabled) {
+  if (!config.changeSync?.enabled || getSyncTargets(config).length === 0) {
     return;
   }
 

@@ -1,11 +1,12 @@
 import { Actions, RemoteStatus } from "../../core/actions.js";
-import { getConfiguredProviders } from "../../core/config.js";
-import { PROVIDERS, getProviderLabel } from "../../providers/registry.js";
+import { getSyncProviders } from "../../core/config.js";
+import { PROVIDERS, PROVIDER_IDS, getProviderLabel } from "../../providers/registry.js";
 import { send, isConflictError } from "../shared/messaging.js";
 import { openConnectionSettings } from "../shared/settings-navigation.js";
 import { effectiveAppearance } from "../shared/appearance-policy.js";
+import { getVisibleLastSync } from "../shared/provider-view.js";
 
-const NO_PROVIDER_MESSAGE = "未检测到已配置平台，请先打开设置完成平台配置。";
+const NO_PROVIDER_MESSAGE = "没有可同步的仓库，请先打开基本设置，启用并配置至少一个仓库。";
 
 let isRunning = false;
 let availableProviders = [];
@@ -121,6 +122,7 @@ function triggerEntryRefresh() {
     return;
   }
   run(async () => {
+    await loadSyncControls();
     await refreshSyncSummary();
   });
 }
@@ -168,7 +170,7 @@ function getDefaultProvider() {
 }
 
 function isPushAllMode() {
-  return Boolean($("pushAllChk")?.checked);
+  return availableProviders.length > 1 && Boolean($("pushAllChk")?.checked);
 }
 
 function updateTargetHints() {
@@ -178,7 +180,7 @@ function updateTargetHints() {
   const pullHint = $("pullTargetHint");
 
   if (pushHint) {
-    pushHint.textContent = provider ? (isPushAllMode() ? "全部已配置平台" : label) : "";
+    pushHint.textContent = provider ? (isPushAllMode() ? "全部已启用平台" : label) : "";
   }
   if (pullHint) {
     pullHint.textContent = provider ? label : "";
@@ -242,7 +244,7 @@ function setActionBusy(busy) {
 
 function renderSyncControls(config) {
   currentConfig = config;
-  availableProviders = getConfiguredProviders(config);
+  availableProviders = getSyncProviders(config);
   applyAppearance(config);
 
   renderCountChips();
@@ -373,6 +375,7 @@ function formatLastSyncProvider(lastSync) {
 }
 
 function formatLastSync(lastSync) {
+  lastSync = getVisibleLastSync(currentConfig, lastSync);
   if (!lastSync) {
     return "无";
   }
@@ -542,7 +545,7 @@ async function onPush() {
 
   clearConflictPreview();
   const beforeCounts = await send(Actions.GET_BOOKMARK_COUNTS);
-  setStatus(pushAll ? "正在推送到所有已配置平台..." : `正在推送到 ${getProviderLabel(provider)}...`);
+  setStatus(pushAll ? "正在推送到所有已启用平台..." : `正在推送到 ${getProviderLabel(provider)}...`);
 
   const payload = pushAll ? { syncAllProviders: true } : { provider, syncAllProviders: false };
 
@@ -635,8 +638,18 @@ function bindEvents() {
     if (areaName !== "local" || !changes.syncConfig?.newValue) {
       return;
     }
-    currentConfig = { ...currentConfig, theme: changes.syncConfig.newValue.theme, skin: changes.syncConfig.newValue.skin };
-    applyAppearance(changes.syncConfig.newValue);
+    const config = changes.syncConfig.newValue;
+    const targetsChanged = ["provider", "syncAllProviders", ...PROVIDER_IDS].some(
+      (key) => JSON.stringify(currentConfig?.[key]) !== JSON.stringify(config[key])
+    );
+    if (targetsChanged) {
+      clearConflictPreview();
+      renderSyncControls(config);
+      void refreshSyncSummary().catch((error) => setStatus(error.message || String(error), true));
+    } else {
+      currentConfig = config;
+      applyAppearance(config);
+    }
   });
 }
 

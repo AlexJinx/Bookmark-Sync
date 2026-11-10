@@ -1,6 +1,6 @@
 import { getConfig } from "../core/storage.js";
 import { isProviderConfigured } from "../core/config.js";
-import { createProviderClient } from "../providers/registry.js";
+import { createProviderClient, assertProviderEnabled } from "../providers/registry.js";
 import { parseSnapshotText } from "../core/snapshot/hash.js";
 import { validateSnapshot } from "../core/bookmarks/service.js";
 import { buildHistoryDiff } from "../core/snapshot/history-diff.js";
@@ -12,6 +12,7 @@ function normalize(commit) {
 async function context(provider) {
   if (!["github", "gitee"].includes(provider)) throw new Error("当前平台不支持提交历史");
   const config = { ...await getConfig(), provider };
+  assertProviderEnabled(config, provider);
   return { config, configured: isProviderConfigured(config, provider) };
 }
 export async function getCommitHistory({ provider, limit = 20, page = 1 }) {
@@ -21,6 +22,7 @@ export async function getCommitHistory({ provider, limit = 20, page = 1 }) {
   if (!configured) return { provider, configured, commits: [], page, hasNext: false };
   const client = createProviderClient(config);
   const commits = await client.listCommits({ limit, page });
+  assertProviderEnabled(await getConfig(), provider);
   // Probe only one record beyond this page, including the exact-full-last-page case.
   const hasNext = commits.length === limit && (await client.listCommits({ limit: 1, page: page * limit + 1 })).length > 0;
   return { provider, configured, commits: commits.map(normalize), page, hasNext };
@@ -36,6 +38,7 @@ export async function getCommitDetail({ provider, sha }) {
   try {
     const read = async (ref, filePath) => {
       if (!ref) return { roots: [] };
+      assertProviderEnabled(await getConfig(), provider);
       const file = await client.getFileAtCommit(ref, filePath);
       if (!file.exists) return { roots: [] };
       const snapshot = parseSnapshotText(file.contentText);

@@ -1,5 +1,5 @@
 import { getConfig } from "../core/storage.js";
-import { normalizeIntervalMinutes } from "../core/config.js";
+import { normalizeIntervalMinutes, getSyncTargets } from "../core/config.js";
 
 // 鬧钟名冻结：既有用户浏览器里已存在同名 alarm。
 export const AUTO_SYNC_ALARM = "bookmarkAutoSync";
@@ -8,7 +8,7 @@ export const BADGE_CLEAR_ALARM = "badgeAutoClear";
 
 export async function scheduleAutoSync(config) {
   await chrome.alarms.clear(AUTO_SYNC_ALARM);
-  if (!config.autoSyncEnabled) {
+  if (!config.autoSyncEnabled || getSyncTargets(config).length === 0) {
     return;
   }
 

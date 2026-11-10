@@ -13,6 +13,7 @@ export const PROVIDERS = Object.freeze({
     Provider: GitHubProvider,
     requiredFields: Object.freeze(["token", "owner", "repo", "branch", "path"]),
     defaults: Object.freeze({
+      enabled: true,
       token: "",
       owner: "",
       repo: "",
@@ -32,6 +33,7 @@ export const PROVIDERS = Object.freeze({
     Provider: GiteeProvider,
     requiredFields: Object.freeze(["token", "owner", "repo", "branch", "path"]),
     defaults: Object.freeze({
+      enabled: true,
       token: "",
       owner: "",
       repo: "",
@@ -61,7 +63,17 @@ export function getProviderLabel(providerId) {
   return PROVIDERS[providerId]?.label || providerId;
 }
 
-export function createProviderClient(config, providerId = config?.provider) {
+export function assertProviderEnabled(config, providerId) {
   const meta = getProviderMeta(providerId);
+  if (config?.[providerId]?.enabled === false) {
+    const error = new Error(`${meta.label} 仓库已禁用，请先在基本设置中启用。`);
+    error.code = "PROVIDER_DISABLED";
+    throw error;
+  }
+  return meta;
+}
+
+export function createProviderClient(config, providerId = config?.provider) {
+  const meta = assertProviderEnabled(config, providerId);
   return new meta.Provider(config?.[providerId] || {});
 }
